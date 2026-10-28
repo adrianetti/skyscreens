@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Android / Gradle
+.gradle/
+local.properties
+.cxx/
+captures/
+*.apk
+*.aab
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# Signing and secrets
+*.keystore
+*.jks
+.env
+
+# Claude Code local settings
+.claude/settings.local.json
