@@ -1,0 +1,10 @@
+[package]
+name = "link"
+version = "0.1.0"
+description = "skyscreens wire protocol and transport, shared by the Mac and headset apps"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["rlib", "staticlib"]

@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["crates/link", "xr"]
+# The headset app only builds for Android; see xr/build.sh.
+default-members = ["crates/link"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/adrianetti/skyscreens"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

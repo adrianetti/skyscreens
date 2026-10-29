@@ -1,0 +1,21 @@
+[package]
+name = "xr"
+version = "0.1.0"
+description = "skyscreens headset app: OpenXR + Vulkan, Quest 3 first"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "skyscreens"
+crate-type = ["cdylib"]
+
+[dependencies]
+link = { path = "../crates/link" }
+log = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.14"
+ash = "0.38"
+openxr = { version = "0.19", features = ["loaded"] }

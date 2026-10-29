@@ -47,6 +47,19 @@ The full design, with the measurements behind it, is in [docs/architecture.md](d
 
 `CGVirtualDisplay` is a private macOS API, so the Mac app cannot ship on the Mac App Store and a future macOS update could break it.
 
+## Development
+
+You need Xcode's command-line tools, Rust (with the `aarch64-linux-android` target), and the Android SDK with NDK 27. [`xr/build.sh`](xr/build.sh) lists the exact paths and versions.
+
+```sh
+mac/scripts/bundle.sh                  # builds mac/.build/Skyscreens.app
+open mac/.build/Skyscreens.app --args on    # create the virtual screens (off to remove them)
+cargo test -p link                     # protocol and transport tests
+xr/build.sh --install                  # builds the headset APK and installs it over adb
+```
+
+macOS asks for Screen Recording permission for Skyscreens the first time it captures.
+
 ## License
 
 [MIT](LICENSE)
