@@ -607,5 +607,6 @@ dependencies = [
  "ash",
  "link",
  "log",
+ "ndk-context",
  "openxr",
 ]

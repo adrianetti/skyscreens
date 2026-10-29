@@ -18,4 +18,5 @@ log = "0.4"
 android-activity = { version = "0.6", features = ["native-activity"] }
 android_logger = "0.14"
 ash = "0.38"
+ndk-context = "0.1"
 openxr = { version = "0.19", features = ["loaded"] }

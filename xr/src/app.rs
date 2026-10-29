@@ -2,7 +2,7 @@
 //! each screen is a compositor layer, so the GPU does almost nothing per frame.
 
 use crate::{gpu::Uploader, pattern::test_pattern, platform::Platform, Result};
-use android_activity::{AndroidApp, MainEvent, PollEvent};
+use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
 use ash::vk::{self, Handle};
 use openxr as xr;
 use std::time::Duration;
@@ -14,6 +14,12 @@ const SCREEN_DEGREES: f32 = 58.0;
 const DISTANCE_M: f32 = 1.5;
 
 pub fn run(android: AndroidApp) -> Result<()> {
+    // android-activity registers the Application as the Android context, and openxr passes that
+    // to the runtime. Quest needs the Activity itself, or the session never leaves IDLE.
+    unsafe {
+        ndk_context::release_android_context();
+        ndk_context::initialize_android_context(android.vm_as_ptr(), android.activity_as_ptr());
+    }
     let entry = unsafe { xr::Entry::load()? };
     entry.initialize_android_loader()?;
     let available = entry.enumerate_extensions()?;
@@ -56,6 +62,25 @@ pub fn run(android: AndroidApp) -> Result<()> {
         let raw = instance.create_vulkan_device(system, get_proc, pdev.as_raw() as _, &info as *const _ as *const _)?.map_err(vk::Result::from_raw)?;
         ash::Device::load(vk_instance.fp_v1_0(), vk::Device::from_raw(raw as _))
     };
+
+    // Quest keeps a session idle if it is created before Android hands the activity its window.
+    let mut window = false;
+    while !window {
+        let mut destroyed = false;
+        android.poll_events(Some(Duration::from_millis(100)), |e| {
+            if let PollEvent::Main(m) = &e {
+                log::info!("android before session: {m:?}");
+            }
+            match e {
+                PollEvent::Main(MainEvent::InitWindow { .. }) => window = true,
+                PollEvent::Main(MainEvent::Destroy) => destroyed = true,
+                _ => {}
+            }
+        });
+        if destroyed {
+            return Ok(());
+        }
+    }
 
     let (session, mut frame_wait, mut frame_stream) = unsafe {
         instance.create_session::<xr::Vulkan>(
@@ -115,14 +140,22 @@ pub fn run(android: AndroidApp) -> Result<()> {
     let mut events = xr::EventDataBuffer::new();
     let (mut running, mut quit) = (false, false);
     while !quit {
-        android.poll_events(Some(Duration::ZERO), |e| {
-            if let PollEvent::Main(MainEvent::Destroy) = e {
-                quit = true;
-            }
+        let mut input = false;
+        android.poll_events(Some(Duration::ZERO), |e| match e {
+            PollEvent::Main(MainEvent::Destroy) => quit = true,
+            PollEvent::Main(MainEvent::InputAvailable) => input = true,
+            PollEvent::Main(m) => log::info!("android: {m:?}"),
+            _ => {}
         });
+        // Android reports the app as not responding if input events are left unread.
+        if input {
+            if let Ok(mut events) = android.input_events_iter() {
+                while events.next(|_| InputStatus::Unhandled) {}
+            }
+        }
         while let Some(event) = instance.poll_event(&mut events)? {
             match event {
-                xr::Event::SessionStateChanged(s) => match s.state() {
+                xr::Event::SessionStateChanged(s) => match { log::info!("session: {:?}", s.state()); s.state() } {
                     xr::SessionState::READY => {
                         session.begin(xr::ViewConfigurationType::PRIMARY_STEREO)?;
                         running = true;
