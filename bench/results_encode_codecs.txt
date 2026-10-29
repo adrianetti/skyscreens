@@ -1,0 +1,35 @@
+== 1. Codec x content, 2560x1440 @60, 20 Mbps target, real-time pace ==
+H.264 lowLatency=true:
+  set MaxFrameDelayCount failed -12900
+  supports: EnableLTR=yes MaxAllowedFrameQP=yes ConstantBitRate=no SpatialAdaptiveQPLevel=no MaxFrameDelayCount=no ReferenceBufferCount=yes BaseLayerFrameRateFraction=yes PrioritizeEncodingSpeedOverQuality=no
+  typing enc ms p50  9.8 p99 12.3 max  74.7 |   0.7 Mbps | P-frame KB p50   0.6 p99   15.2 max   40.6 | key KB  101.7 | drops 0 | PSNR Y 56.8 (min 51.0) UV 56.5 dB
+  scroll enc ms p50 10.0 p99 12.7 max  47.0 |   1.4 Mbps | P-frame KB p50   2.1 p99   15.6 max   40.1 | key KB  100.6 | drops 0 | PSNR Y 57.2 (min 51.1) UV 57.2 dB
+  video enc ms p50  9.8 p99 13.4 max  32.6 |  19.8 Mbps | P-frame KB p50  37.6 p99   53.1 max  131.0 | key KB   13.7 | drops 0 | PSNR Y 44.8 (min 44.6) UV 49.3 dB
+HEVC lowLatency=true:
+  set MaxFrameDelayCount failed -12900
+  supports: EnableLTR=yes MaxAllowedFrameQP=yes ConstantBitRate=no SpatialAdaptiveQPLevel=no MaxFrameDelayCount=no ReferenceBufferCount=yes BaseLayerFrameRateFraction=yes PrioritizeEncodingSpeedOverQuality=no
+  typing enc ms p50 10.9 p99 14.1 max  49.4 |   0.7 Mbps | P-frame KB p50   0.9 p99   12.2 max   39.9 | key KB   99.4 | drops 0 | PSNR Y 56.4 (min 51.0) UV 57.3 dB
+  scroll enc ms p50 10.8 p99 14.3 max  35.1 |   1.1 Mbps | P-frame KB p50   1.7 p99   11.5 max   29.2 | key KB   98.1 | drops 0 | PSNR Y 57.1 (min 51.2) UV 58.4 dB
+  video enc ms p50 10.7 p99 16.0 max  36.0 |  19.7 Mbps | P-frame KB p50  35.4 p99   90.7 max  110.3 | key KB    7.4 | drops 0 | PSNR Y 44.9 (min 44.6) UV 49.5 dB
+HEVC lowLatency=false:
+  set MaxFrameDelayCount failed -12900
+  supports: EnableLTR=no MaxAllowedFrameQP=yes ConstantBitRate=yes SpatialAdaptiveQPLevel=yes MaxFrameDelayCount=yes ReferenceBufferCount=no BaseLayerFrameRateFraction=no PrioritizeEncodingSpeedOverQuality=yes
+  typing enc ms p50 13.1 p99 33.3 max  35.4 |   0.7 Mbps | P-frame KB p50   0.6 p99   11.1 max   31.3 | key KB  222.7 | drops 0 | PSNR Y 61.1 (min 48.9) UV 61.1 dB
+  scroll enc ms p50 13.2 p99 38.8 max  55.4 |   1.7 Mbps | P-frame KB p50   2.4 p99   22.5 max   30.6 | key KB  253.5 | drops 0 | PSNR Y 63.4 (min 48.9) UV 62.8 dB
+  video enc ms p50 21.0 p99 35.4 max  36.9 |  20.1 Mbps | P-frame KB p50  45.1 p99   57.2 max  104.5 | key KB  154.3 | drops 0 | PSNR Y 44.6 (min 44.4) UV 49.2 dB
+== 2. Resolution and refresh scaling, scrolling code (hardest text case), H.264 low latency ==
+  1920x1080 @60 12 Mbps enc ms p50  7.4 p99  8.8 max  23.0 |   1.4 Mbps | P-frame KB p50   2.2 p99   13.2 max   26.5 | key KB   79.5 | drops 0
+  2560x1440 @60 20 Mbps enc ms p50  9.6 p99 12.6 max  51.0 |   1.4 Mbps | P-frame KB p50   2.1 p99   15.6 max   40.1 | key KB  100.6 | drops 0
+  2560x1440 @90 28 Mbps enc ms p50  9.4 p99 10.8 max  33.2 |   2.1 Mbps | P-frame KB p50   2.1 p99   16.0 max   38.5 | key KB   93.2 | drops 0
+  2560x1440 @120 36 Mbps enc ms p50  9.0 p99 10.2 max  53.2 |   2.8 Mbps | P-frame KB p50   2.1 p99   16.0 max   38.5 | key KB   93.2 | drops 0
+  3840x2160 @60 40 Mbps enc ms p50 19.1 p99 21.0 max  85.4 |   1.8 Mbps | P-frame KB p50   2.5 p99   21.9 max   65.7 | key KB  141.1 | drops 0
+== 3. Four screens at once, 2560x1440 @60, H.264 low latency (video, code typing, scroll, chat typing) ==
+  video enc ms p50 33.9 p99 35.5 max  88.9 |  24.5 Mbps | P-frame KB p50  47.6 p99   88.4 max  137.0 | key KB   15.8 | drops 0
+  code typing enc ms p50 33.9 p99 36.2 max 108.4 |   0.7 Mbps | P-frame KB p50   0.6 p99   15.0 max   38.0 | key KB   88.9 | drops 0
+  code scroll enc ms p50 33.9 p99 36.2 max 133.4 |   1.4 Mbps | P-frame KB p50   2.1 p99   14.7 max   37.2 | key KB   88.7 | drops 0
+  chat typing enc ms p50 33.9 p99 35.4 max 125.2 |   0.7 Mbps | P-frame KB p50   0.6 p99   15.2 max   38.8 | key KB   89.4 | drops 0
+== 3. Four screens at once, 2560x1440 @60, HEVC low latency (video, code typing, scroll, chat typing) ==
+  video enc ms p50 37.4 p99 38.8 max  40.9 |  24.6 Mbps | P-frame KB p50  44.2 p99  105.9 max  111.3 | key KB    8.9 | drops 0
+  code typing enc ms p50 37.4 p99 38.7 max  71.2 |   0.7 Mbps | P-frame KB p50   0.9 p99   17.3 max   34.0 | key KB   88.0 | drops 0
+  code scroll enc ms p50 37.4 p99 38.4 max  46.2 |   1.1 Mbps | P-frame KB p50   1.7 p99   14.1 max   31.7 | key KB   87.8 | drops 0
+  chat typing enc ms p50 37.4 p99 38.5 max  63.3 |   0.7 Mbps | P-frame KB p50   0.9 p99   17.6 max   34.0 | key KB   88.6 | drops 0

@@ -1,0 +1,13 @@
+{
+  "_source": "M2 VideoToolbox H.264 low-latency bench, 2560x1440; video at 1080p30 10 Mbps; lossless = LZ4 on BGRA patches",
+  "typing": {"p50": 600, "p99": 15200},
+  "scroll": {"p50": 2100, "p99": 15600},
+  "video":  {"p50": 40000, "p99": 60000},
+  "key":    {"p50": 100000, "p99": 110000},
+  "patch":  {"p50": 3000, "p99": 15000},
+  "refine": {"p50": 480000, "p99": 700000},
+  "encode": {"p50": 10.0, "p99": 18.0},
+  "lossless_enc_ms": 0.1,
+  "lossless_dec_ms": 1.0,
+  "decode_ms": 5.0
+}
