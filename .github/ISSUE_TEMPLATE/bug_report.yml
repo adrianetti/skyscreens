@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work as described in the docs.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac
+      description: Model, chip and macOS version.
+      placeholder: MacBook Air M2, macOS 26.6
+    validations:
+      required: true
+  - type: input
+    id: headset
+    attributes:
+      label: Headset
+      description: Model and OS version (Settings > System > About).
+      placeholder: Quest 3, Horizon OS v81
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse --short HEAD`.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The output of `mac/scripts/run.sh stream` (or the failing command), and `adb logcat -d -s skyscreens:V` from the headset.
+      render: text

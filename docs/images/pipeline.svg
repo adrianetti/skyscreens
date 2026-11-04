@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="500" viewBox="0 0 960 500" role="img" aria-labelledby="title desc">
+  <title id="title">How skyscreens moves a Mac screen into the headset (Phase 1)</title>
+  <desc id="desc">On the Mac, a helper creates a virtual display. ScreenCaptureKit captures it, VideoToolbox encodes H.264 in low-latency mode, and the Rust link crate sends it over TCP. A USB-C cable with adb reverse on port 7243 carries it to the Meta Quest 3. There the link crate reassembles it, MediaCodec decodes it in hardware straight into an OpenXR surface layer, and the compositor shows it over passthrough. The headset echoes each decoded frame's timestamp back, so the Mac prints the round-trip latency.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .bg { fill: #f6f8fa; }
+    .panel { fill: #ffffff; stroke: #d0d7de; }
+    .box { fill: #f6f8fa; stroke: #d0d7de; }
+    .t { fill: #1f2328; }
+    .m { fill: #59636e; }
+    .mac { fill: #0969da; }
+    .quest { fill: #8250df; }
+    .wire { fill: #bc4c00; }
+    .flow { stroke: #8c959f; }
+    .flowhead { fill: #8c959f; }
+    .cable { stroke: #bc4c00; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .panel { fill: #161b22; stroke: #30363d; }
+      .box { fill: #0d1117; stroke: #30363d; }
+      .t { fill: #e6edf3; }
+      .m { fill: #9198a1; }
+      .mac { fill: #4493f8; }
+      .quest { fill: #ab7df8; }
+      .wire { fill: #f0883e; }
+      .flow { stroke: #6e7681; }
+      .flowhead { fill: #6e7681; }
+      .cable { stroke: #f0883e; }
+    }
+  </style>
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="flowhead"/>
+    </marker>
+    <marker id="cablehead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="wire"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="960" height="500" rx="16"/>
+
+  <!-- Mac -->
+  <rect class="panel" x="24" y="24" width="372" height="430" rx="14"/>
+  <circle class="mac" cx="54" cy="53" r="6"/>
+  <text class="t" x="68" y="59" font-size="18" font-weight="700">Mac</text>
+  <text class="m" x="48" y="82" font-size="13">Swift and Apple frameworks, plus the Rust link</text>
+
+  <g>
+    <rect class="box" x="48" y="100" width="324" height="64" rx="10"/>
+    <rect class="mac" x="48" y="112" width="4" height="40" rx="2"/>
+    <text class="t" x="68" y="127" font-size="15" font-weight="600">Virtual display</text>
+    <text class="m mono" x="68" y="148" font-size="12">skyscreens-displays · CGVirtualDisplay</text>
+
+    <rect class="box" x="48" y="190" width="324" height="64" rx="10"/>
+    <rect class="mac" x="48" y="202" width="4" height="40" rx="2"/>
+    <text class="t" x="68" y="217" font-size="15" font-weight="600">Capture</text>
+    <text class="m mono" x="68" y="238" font-size="12">ScreenCaptureKit · only on change</text>
+
+    <rect class="box" x="48" y="280" width="324" height="64" rx="10"/>
+    <rect class="mac" x="48" y="292" width="4" height="40" rx="2"/>
+    <text class="t" x="68" y="307" font-size="15" font-weight="600">Encode</text>
+    <text class="m mono" x="68" y="328" font-size="12">VideoToolbox H.264 · low latency</text>
+
+    <rect class="box" x="48" y="370" width="324" height="64" rx="10"/>
+    <rect class="mac" x="48" y="382" width="4" height="40" rx="2"/>
+    <text class="t" x="68" y="397" font-size="15" font-weight="600">Send</text>
+    <text class="m mono" x="68" y="418" font-size="12">link · priority fragments over TCP</text>
+  </g>
+  <g class="flow" stroke-width="2" fill="none" marker-end="url(#head)">
+    <line x1="210" y1="166" x2="210" y2="186"/>
+    <line x1="210" y1="256" x2="210" y2="276"/>
+    <line x1="210" y1="346" x2="210" y2="366"/>
+  </g>
+
+  <!-- Quest -->
+  <rect class="panel" x="564" y="24" width="372" height="430" rx="14"/>
+  <circle class="quest" cx="594" cy="53" r="6"/>
+  <text class="t" x="608" y="59" font-size="18" font-weight="700">Meta Quest 3</text>
+  <text class="m" x="588" y="82" font-size="13">Rust, OpenXR and Vulkan. No engine</text>
+
+  <g>
+    <rect class="box" x="588" y="100" width="324" height="64" rx="10"/>
+    <rect class="quest" x="588" y="112" width="4" height="40" rx="2"/>
+    <text class="t" x="608" y="127" font-size="15" font-weight="600">In your room</text>
+    <text class="m mono" x="608" y="148" font-size="12">passthrough + screen layer</text>
+
+    <rect class="box" x="588" y="190" width="324" height="64" rx="10"/>
+    <rect class="quest" x="588" y="202" width="4" height="40" rx="2"/>
+    <text class="t" x="608" y="217" font-size="15" font-weight="600">Show</text>
+    <text class="m mono" x="608" y="238" font-size="12">OpenXR surface layer · 90 Hz</text>
+
+    <rect class="box" x="588" y="280" width="324" height="64" rx="10"/>
+    <rect class="quest" x="588" y="292" width="4" height="40" rx="2"/>
+    <text class="t" x="608" y="307" font-size="15" font-weight="600">Decode</text>
+    <text class="m mono" x="608" y="328" font-size="12">MediaCodec · hardware H.264</text>
+
+    <rect class="box" x="588" y="370" width="324" height="64" rx="10"/>
+    <rect class="quest" x="588" y="382" width="4" height="40" rx="2"/>
+    <text class="t" x="608" y="397" font-size="15" font-weight="600">Receive</text>
+    <text class="m mono" x="608" y="418" font-size="12">link · reassemble fragments</text>
+  </g>
+  <g class="flow" stroke-width="2" fill="none" marker-end="url(#head)">
+    <line x1="750" y1="368" x2="750" y2="348"/>
+    <line x1="750" y1="278" x2="750" y2="258"/>
+    <line x1="750" y1="188" x2="750" y2="168"/>
+  </g>
+
+  <!-- Cable and the latency echo -->
+  <line class="cable" x1="374" y1="402" x2="584" y2="402" stroke-width="3" marker-end="url(#cablehead)"/>
+  <text class="wire" x="479" y="390" font-size="13" font-weight="700" text-anchor="middle">USB-C cable</text>
+  <text class="m mono" x="479" y="424" font-size="12" text-anchor="middle">adb reverse tcp:7243</text>
+
+  <line class="flow" x1="586" y1="312" x2="376" y2="312" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#head)"/>
+  <text class="m mono" x="479" y="302" font-size="11" text-anchor="middle">decoded-frame time</text>
+  <text class="m mono" x="479" y="330" font-size="11" text-anchor="middle">→ latency readout</text>
+
+  <text class="m" x="480" y="482" font-size="13" text-anchor="middle">Phase 1 path. Next: a lossless lane for text, a local cursor layer, 3–4 screens, then Wi-Fi.</text>
+</svg>

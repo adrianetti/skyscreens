@@ -219,9 +219,13 @@ A latency readout (timestamps on both sides) ships in Phase 1, so every target i
 
 ## Not measured yet
 
-Each of these gets measured in Phase 0 or 1 on the real devices:
+Measured on the Quest 3 in Phase 0:
+- 16 concurrent H.264/HEVC decoders, up to 8192×8192.
+- Refresh rates of 72, 80, 90 and 120 Hz.
+- The 1616×1008 test screen runs at 90 FPS with about 1–2 ms of app time per frame. The predicted display time is about 21–23 ms ahead (the runtime's frame pipeline).
+
+Each of these gets measured in Phase 1 on the real devices:
 - MediaCodec decode latency on Quest 3, and whether the Qualcomm low-latency key takes effect.
-- Maximum concurrent decoders on Quest 3.
 - ScreenCaptureKit capture latency from a virtual display, and whether 120 Hz really delivers 120 frames.
 - The second hotspot hop (phone to Quest).
 - Getting the cursor image for every cursor shape (`NSCursor.currentSystem` is deprecated).
@@ -265,11 +269,20 @@ Quest 3 comes first. These rules apply from day one, so other devices stay cheap
 ## Repo layout
 
 ```
-mac/           Swift: menu bar, CLI, displays helper, capture, encode, cursor
-xr/            Rust: OpenXR + Vulkan headset app (Quest 3 first)
-  platform/    one module per vendor: Quest first
-  media/       hardware decode per operating system: Android first
-crates/link/   Rust: wire protocol, encryption, FEC, priorities (shared)
-bench/         measurements and simulations behind this document
-docs/          architecture and protocol
+mac/                    Swift package
+  Sources/skyscreens/           CLI: on, off, status, probe, stream, permission
+  Sources/skyscreens-displays/  helper process that owns the virtual displays
+  Sources/SkyscreensKit/        session, displays, layout, capture, encode, lossless tiles, streamer
+  Sources/CVirtualDisplay/      declarations for the private CGVirtualDisplay API
+  Sources/CLink/                C header for crates/link
+  scripts/                      bundle.sh (build and sign the app), run.sh (run a command through it)
+xr/                     Rust: OpenXR + Vulkan headset app (Quest 3 first)
+  src/platform.rs               vendor extensions, detected at startup (becomes one module per vendor)
+  src/decoder.rs                MediaCodec decode (becomes the media module per operating system)
+  src/net.rs, src/app.rs        connection to the Mac; session, frame loop and layers
+crates/link/            Rust: wire protocol, priorities, reassembly, C ABI (shared). Encryption and FEC come in Phase 3
+bench/                  measurements and simulations behind this document
+docs/                   architecture, development guide, images
 ```
+
+The [development guide](development.md) explains how to build and run each part. [AGENTS.md](../AGENTS.md) is the short version for coding agents.

@@ -1,0 +1,36 @@
+name: Test report
+description: Share how skyscreens runs on your Mac and headset, including when it works.
+labels: [test report]
+body:
+  - type: input
+    id: mac
+    attributes:
+      label: Mac
+      placeholder: MacBook Pro M3 Pro, macOS 26.1
+    validations:
+      required: true
+  - type: input
+    id: headset
+    attributes:
+      label: Headset
+      placeholder: Quest 3S, Horizon OS v81
+    validations:
+      required: true
+  - type: input
+    id: cable
+    attributes:
+      label: Cable
+      placeholder: USB-C to USB-C, USB 3.2
+  - type: textarea
+    id: latency
+    attributes:
+      label: Latency lines
+      description: A few lines printed by `mac/scripts/run.sh stream` while you type and scroll.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: How it looks and feels
+      description: Is text sharp? Does anything shimmer when you move your head? Stutters, artifacts, crashes?

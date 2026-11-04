@@ -1,0 +1,25 @@
+# skyscreens
+
+> Open-source app that turns a Meta Quest 3 into extra monitors for a Mac. The Mac creates virtual displays and streams them to the headset over USB-C (Wi-Fi later), where each one shows as a sharp OpenXR layer over passthrough. No account and no cloud. MIT license. Early development: Phase 1 of 5 (one screen over USB) is built and awaiting its first device test. There is nothing to install yet.
+
+Key facts:
+
+- Platforms: Apple Silicon Mac with macOS 14 or later, and Meta Quest 3. Quest 3S, Android XR and Steam Frame are planned.
+- Mac side: Swift, using `CGVirtualDisplay` (a private API, so no Mac App Store), ScreenCaptureKit and VideoToolbox H.264 in low-latency mode.
+- Headset side: native Rust with OpenXR, Vulkan and MediaCodec. No game engine and no Java.
+- Protocol: the Rust `link` crate, shared by both sides. Today it runs TCP over `adb reverse` on port 7243. UDP with FEC, resend and LTR recovery is planned for Wi-Fi.
+- Targets: 25 ms or less from key press to visible text over USB, and 12 ms or less for the cursor.
+- Repository: https://github.com/adrianetti/skyscreens
+
+## Docs
+
+- [README](https://github.com/adrianetti/skyscreens/blob/main/README.md): what it is, status, roadmap, measured results, how to build
+- [Architecture](https://github.com/adrianetti/skyscreens/blob/main/docs/architecture.md): the design and the measurements behind every decision
+- [Development guide](https://github.com/adrianetti/skyscreens/blob/main/docs/development.md): toolchains, code signing, Quest setup, streaming, troubleshooting
+- [AGENTS.md](https://github.com/adrianetti/skyscreens/blob/main/AGENTS.md): code map, commands, rules and known pitfalls for coding agents
+
+## Optional
+
+- [Benchmarks](https://github.com/adrianetti/skyscreens/blob/main/bench/README.md): the encoder, display, sharpness and network measurements, and how to rerun them
+- [Contributing](https://github.com/adrianetti/skyscreens/blob/main/CONTRIBUTING.md): how to help, and the project's conventions
+- [Security](https://github.com/adrianetti/skyscreens/blob/main/SECURITY.md): the current security state, and how to report a problem
