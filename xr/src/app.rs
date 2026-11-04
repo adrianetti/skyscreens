@@ -1,10 +1,12 @@
 //! OpenXR + Vulkan setup and the frame loop. No projection layer and no 3D rendering:
 //! each screen is a compositor layer, so the GPU does almost nothing per frame.
 
-use crate::{gpu::Uploader, pattern::test_pattern, platform::Platform, Result};
+use crate::{gpu::Uploader, net, pattern::test_pattern, platform::Platform, Result};
 use android_activity::{AndroidApp, InputStatus, MainEvent, PollEvent};
 use ash::vk::{self, Handle};
+use ndk::native_window::NativeWindow;
 use openxr as xr;
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 /// Phase 0 test screen: the code screen's default size for 25 pixels per degree.
@@ -136,7 +138,15 @@ pub fn run(android: AndroidApp) -> Result<()> {
     }
 
     let width_m = 2.0 * DISTANCE_M * (SCREEN_DEGREES.to_radians() / 2.0).tan();
-    let height_m = width_m * SCREEN_H as f32 / SCREEN_W as f32;
+
+    // The Mac's screen arrives as video decoded into a surface layer; until then the test screen shows.
+    let vm = unsafe { jni::JavaVM::from_raw(android.vm_as_ptr().cast())? };
+    let env = vm.attach_current_thread_permanently()?;
+    let shared = Arc::new(net::Shared::default());
+    let (screens_tx, screens_rx) = mpsc::channel();
+    net::spawn(shared.clone(), screens_tx);
+    let mut video: Option<(xr::Swapchain<xr::Vulkan>, i32, i32)> = None;
+
     let mut events = xr::EventDataBuffer::new();
     let (mut running, mut quit) = (false, false);
     while !quit {
@@ -180,23 +190,40 @@ pub fn run(android: AndroidApp) -> Result<()> {
             continue;
         }
 
+        while let Ok(screens) = screens_rx.try_recv() {
+            log::info!("screens: {screens:?}");
+            let Some(s) = screens.first() else { continue };
+            let (w, h) = (s.width as i32, s.height as i32);
+            if video.as_ref().map(|v| (v.1, v.2)) != Some((w, h)) {
+                drop(video.take()); // destroy the old layer first
+                let (swapchain, surface) = surface_swapchain(&instance, &session, w as u32, h as u32)?;
+                let window = unsafe { NativeWindow::from_surface(env.get_raw().cast(), surface.cast()) }.ok_or("no window for surface")?;
+                shared.set_window(window, w, h);
+                video = Some((swapchain, w, h));
+            }
+        }
+
         let state = frame_wait.wait()?;
         frame_stream.begin()?;
         if !state.should_render {
             frame_stream.end(state.predicted_display_time, xr::EnvironmentBlendMode::OPAQUE, &[])?;
             continue;
         }
+        let (chain, w, h) = match &video {
+            Some((c, w, h)) => (c, *w, *h),
+            None => (&swapchain, SCREEN_W as i32, SCREEN_H as i32),
+        };
         let quad = xr::CompositionLayerQuad::new()
             .space(&space)
             .eye_visibility(xr::EyeVisibility::BOTH)
             .sub_image(
                 xr::SwapchainSubImage::new()
-                    .swapchain(&swapchain)
+                    .swapchain(chain)
                     .image_array_index(0)
-                    .image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: SCREEN_W as i32, height: SCREEN_H as i32 } }),
+                    .image_rect(xr::Rect2Di { offset: xr::Offset2Di { x: 0, y: 0 }, extent: xr::Extent2Di { width: w, height: h } }),
             )
             .pose(xr::Posef { orientation: xr::Quaternionf::IDENTITY, position: xr::Vector3f { x: 0.0, y: 0.0, z: -DISTANCE_M } })
-            .size(xr::Extent2Df { width: width_m, height: height_m });
+            .size(xr::Extent2Df { width: width_m, height: width_m * h as f32 / w as f32 });
         let underlay = passthrough.as_ref().map(|(_, layer)| xr::sys::CompositionLayerPassthroughFB {
             ty: xr::sys::CompositionLayerPassthroughFB::TYPE,
             next: std::ptr::null(),
@@ -214,4 +241,30 @@ pub fn run(android: AndroidApp) -> Result<()> {
     }
     drop(uploader);
     Ok(())
+}
+
+/// A layer whose content comes from an Android Surface (here, the video decoder).
+/// Format, samples, faces, array size and mips must be zero for this kind of swapchain.
+fn surface_swapchain(instance: &xr::Instance, session: &xr::Session<xr::Vulkan>, width: u32, height: u32) -> Result<(xr::Swapchain<xr::Vulkan>, *mut std::ffi::c_void)> {
+    let create = instance.exts().khr_android_surface_swapchain.ok_or("XR_KHR_android_surface_swapchain not enabled")?.create_swapchain_android_surface;
+    let info = xr::sys::SwapchainCreateInfo {
+        ty: xr::sys::SwapchainCreateInfo::TYPE,
+        next: std::ptr::null(),
+        create_flags: xr::SwapchainCreateFlags::EMPTY,
+        usage_flags: xr::SwapchainUsageFlags::SAMPLED | xr::SwapchainUsageFlags::COLOR_ATTACHMENT,
+        format: 0,
+        sample_count: 0,
+        width,
+        height,
+        face_count: 0,
+        array_size: 0,
+        mip_count: 0,
+    };
+    let mut handle = xr::sys::Swapchain::NULL;
+    let mut surface = std::ptr::null_mut();
+    let r = unsafe { create(session.as_raw(), &info, &mut handle, &mut surface) };
+    if r.into_raw() < 0 {
+        return Err(format!("xrCreateSwapchainAndroidSurfaceKHR: {r:?}").into());
+    }
+    Ok((unsafe { xr::Swapchain::from_raw(session.clone(), handle) }, surface as *mut std::ffi::c_void))
 }

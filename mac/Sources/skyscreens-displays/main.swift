@@ -14,7 +14,8 @@ func option(_ name: String) -> String? { args.firstIndex(of: name).flatMap { $0 
 
 let ppd = option("--ppd").flatMap(Double.init) ?? 25
 let hz = option("--hz").flatMap(Double.init) ?? 60
-let specs = Layout.standard(pixelsPerDegree: ppd, refreshRate: hz)
+let count = option("--count").flatMap(Int.init) ?? 4
+let specs = Array(Layout.standard(pixelsPerDegree: ppd, refreshRate: hz).prefix(count))
 
 struct Started: Encodable {
     struct Screen: Encodable { let id: CGDirectDisplayID; let spec: ScreenSpec }

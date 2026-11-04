@@ -19,6 +19,8 @@ case "status":
     print(Session.status() ?? "off")
 case "probe":
     Probe.run(hz: args.dropFirst().first.flatMap(Double.init) ?? 60)
+case "stream":
+    do { try Streamer().run() } catch { fail("\(error)") }
 case "permission":
     // Shows the system prompt the first time and adds Skyscreens to the Screen Recording list.
     print(CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() ? "screen recording: allowed" : "screen recording: not allowed yet")
@@ -28,6 +30,7 @@ default:
            skyscreens off       remove them; windows move back to the laptop
            skyscreens status    show the running screens
            skyscreens probe [hz]  measure capture and encode latency on a test screen
+           skyscreens stream    stream one screen to the Quest over USB (Phase 1)
            skyscreens permission  ask macOS for Screen Recording access
     """)
 }

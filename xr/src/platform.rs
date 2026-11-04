@@ -31,5 +31,6 @@ impl Platform {
         e.fb_composition_layer_settings = self.layer_settings;
         e.meta_automatic_layer_filter = self.auto_layer_filter;
         e.fb_display_refresh_rate = self.refresh_rate;
+        e.khr_android_surface_swapchain = self.surface_swapchain;
     }
 }

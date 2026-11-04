@@ -5,6 +5,7 @@
 # with the default ad-hoc signature macOS may ask again after each rebuild.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+(cd .. && PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH" cargo build --release -p link)
 swift build -c release
 APP=.build/Skyscreens.app
 rm -rf "$APP"

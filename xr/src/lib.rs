@@ -3,7 +3,11 @@
 #[cfg(target_os = "android")]
 mod app;
 #[cfg(target_os = "android")]
+mod decoder;
+#[cfg(target_os = "android")]
 mod gpu;
+#[cfg(target_os = "android")]
+mod net;
 mod pattern;
 #[cfg(target_os = "android")]
 mod platform;

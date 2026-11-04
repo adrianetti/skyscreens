@@ -17,8 +17,11 @@ pub struct SkServer {
     sender: Mutex<Option<Sender>>,
     screens: Mutex<Vec<Screen>>,
     connected: AtomicBool,
-    on_message: Mutex<Option<(extern "C" fn(*mut std::ffi::c_void, u8, u8), SendPtr)>>,
+    on_message: Mutex<Option<(Callback, SendPtr)>>,
 }
+
+/// (context, kind, screen, value): kind 1 = keyframe request, 2 = pong with the echoed timestamp.
+type Callback = extern "C" fn(*mut std::ffi::c_void, u8, u8, u64);
 
 #[derive(Clone, Copy)]
 struct SendPtr(*mut std::ffi::c_void);
@@ -58,7 +61,7 @@ impl SkServer {
         }
     }
 
-    /// Reports headset requests to the app as (kind, screen): 1 = keyframe request.
+    /// Reports what the headset sends back to the app through the callback.
     fn read_loop(&self, mut stream: TcpStream) {
         let mut r = Reassembler::default();
         let mut buf = vec![0u8; 64 * 1024];
@@ -67,11 +70,12 @@ impl SkServer {
                 break;
             }
             let Ok(msgs) = r.feed(&buf[..n]) else { break };
+            let Some((cb, ctx)) = *self.on_message.lock().unwrap() else { continue };
             for m in msgs {
-                if let Message::KeyframeRequest { screen } = m {
-                    if let Some((cb, ctx)) = *self.on_message.lock().unwrap() {
-                        cb(ctx.0, 1, screen);
-                    }
+                match m {
+                    Message::KeyframeRequest { screen } => cb(ctx.0, 1, screen, 0),
+                    Message::Pong { t_us } => cb(ctx.0, 2, 0, t_us),
+                    _ => {}
                 }
             }
         }
@@ -117,7 +121,7 @@ pub unsafe extern "C" fn sk_server_connected(server: *const SkServer) -> bool {
 /// # Safety
 /// `server` must come from `sk_server_start`; `ctx` must stay valid while the server runs.
 #[no_mangle]
-pub unsafe extern "C" fn sk_server_on_message(server: *const SkServer, cb: extern "C" fn(*mut std::ffi::c_void, u8, u8), ctx: *mut std::ffi::c_void) {
+pub unsafe extern "C" fn sk_server_on_message(server: *const SkServer, cb: Callback, ctx: *mut std::ffi::c_void) {
     *(*server).on_message.lock().unwrap() = Some((cb, SendPtr(ctx)));
 }
 

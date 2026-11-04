@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Starts and stops the displays helper, and remembers it in Application Support.
@@ -30,6 +31,18 @@ public enum Session {
 
     struct State: Decodable { let pid: Int32 }
 
+    public struct Screen: Decodable {
+        public let id: CGDirectDisplayID
+        public let spec: ScreenSpec
+    }
+
+    /// The running screens, in layout order.
+    public static func screens() -> [Screen] {
+        struct Info: Decodable { let screens: [Screen] }
+        guard let s = status(), let info = try? JSONDecoder().decode(Info.self, from: Data(s.utf8)) else { return [] }
+        return info.screens
+    }
+
     static func runningPID() -> Int32? {
         guard let data = try? Data(contentsOf: stateFile),
               let line = String(data: data, encoding: .utf8)?.split(separator: "\n").first,
@@ -43,7 +56,7 @@ public enum Session {
         runningPID() == nil ? nil : (try? String(contentsOf: stateFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public static func on(pixelsPerDegree: Double = 25, refreshRate: Double = 60) throws -> String {
+    public static func on(pixelsPerDegree: Double = 25, refreshRate: Double = 60, count: Int = 4) throws -> String {
         if let status = status() { return status }
         guard FileManager.default.isExecutableFile(atPath: helperPath) else { throw SessionError.helperMissing(helperPath) }
         try? FileManager.default.removeItem(at: stateFile)
@@ -59,7 +72,7 @@ public enum Session {
         posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID))
         defer { posix_spawn_file_actions_destroy(&actions); posix_spawnattr_destroy(&attr) }
 
-        let argv = [helperPath, "--ppd", "\(pixelsPerDegree)", "--hz", "\(refreshRate)"]
+        let argv = [helperPath, "--ppd", "\(pixelsPerDegree)", "--hz", "\(refreshRate)", "--count", "\(count)"]
         var cargs = argv.map { strdup($0) } + [nil]
         defer { cargs.forEach { free($0) } }
         var pid: pid_t = 0
