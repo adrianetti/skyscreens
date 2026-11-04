@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Builds Skyscreens.app, so macOS grants Screen Recording to skyscreens itself
 # rather than to the terminal that launched it.
-# Set SKYSCREENS_SIGN_ID to a code signing identity to keep the permission across rebuilds;
-# with the default ad-hoc signature macOS may ask again after each rebuild.
+# Signs with a stable identity so the permission survives rebuilds: SKYSCREENS_SIGN_ID if set,
+# else the first "Apple Development" or "Skyscreens" identity in the keychain. Without one the
+# signature is ad-hoc, and macOS treats every rebuild as a new app that needs the permission again.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 (cd .. && PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH" cargo build --release -p link)
@@ -27,7 +28,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-SIGN="${SKYSCREENS_SIGN_ID:--}"
+identity() { security find-identity -p codesigning 2>/dev/null | awk '/Apple Development|Skyscreens/ && !n++ { print $2 }' || true; }
+SIGN="${SKYSCREENS_SIGN_ID:-$(identity)}"
+if [[ -z "$SIGN" ]]; then
+  SIGN=-
+  echo "warning: ad-hoc signature, so macOS will ask for Screen Recording again after every rebuild." >&2
+  echo "         Create a signing identity once: docs/development.md#code-signing" >&2
+fi
 codesign --force --sign "$SIGN" "$APP/Contents/MacOS/skyscreens-displays"
 codesign --force --sign "$SIGN" "$APP"
 echo "$PWD/$APP"

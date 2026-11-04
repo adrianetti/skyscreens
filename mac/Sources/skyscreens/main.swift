@@ -23,7 +23,15 @@ case "stream":
     do { try Streamer().run() } catch { fail("\(error)") }
 case "permission":
     // Shows the system prompt the first time and adds Skyscreens to the Screen Recording list.
-    print(CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() ? "screen recording: allowed" : "screen recording: not allowed yet")
+    if CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() {
+        print("screen recording: allowed")
+    } else {
+        print("""
+        screen recording: not allowed yet
+        If System Settings already shows Skyscreens switched on, that switch belongs to an older build.
+        Select Skyscreens there, remove it with the minus button, then run this command again.
+        """)
+    }
 default:
     print("""
     usage: skyscreens on        create the virtual screens
