@@ -3,7 +3,7 @@
 **Extra monitors for your Mac, inside a Meta Quest 3.** Open source, no account, no cloud.
 
 <p align="center">
-  <img src="docs/images/banner.svg" alt="Four Mac screens floating around you in a Meta Quest 3: code in the center, chat on the left, email on the right and video above, with the MacBook below" width="100%">
+  <img src="docs/images/banner.jpg" alt="A desk with a laptop at dusk, with four virtual screens floating above it as seen in a Meta Quest 3: code in the center, chat on the left, email on the right and video above" width="100%">
 </p>
 
 skyscreens adds virtual displays to your Mac and streams them to the headset, where they float in your room like real monitors. macOS treats them as real displays, so windows, Spaces, your keyboard, trackpad and cursor work across them as usual. You still see your desk through passthrough.

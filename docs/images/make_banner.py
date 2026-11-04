@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
-"""Draws the README banner and the GitHub social preview as SVG.
+"""Builds the README banner and the GitHub social preview.
 
-The picture is the default four-screen layout from docs/architecture.md, seen from the
-headset: code in the center, chat on the left, email on the right, video above. Side
-screens and the video screen are drawn in perspective, the way they curve around you.
+A photo of a desk (background.jpg, made with GPT Image through Codex) with the default
+four-screen layout from docs/architecture.md composited on top: code in the center,
+chat on the left, email on the right, video above. The side screens and the video screen
+are drawn in perspective, the way they curve around you in the headset.
 
-    python3 docs/images/make_banner.py      # writes banner.svg and social-preview.svg here
+    python3 docs/images/make_banner.py
 
-The PNG for GitHub (Settings > Social preview) is social-preview.svg rendered by Chrome:
-
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \\
-        --hide-scrollbars --window-size=1280,640 --screenshot=docs/images/social-preview.png \\
-        "file://$PWD/docs/images/social-preview.svg"
+It writes banner.jpg (README) and social-preview.jpg (GitHub > Settings > Social preview)
+next to this script. Rendering needs Google Chrome and macOS `sips`.
 """
 
+import base64
 import math
 import random
+import subprocess
+import tempfile
 from pathlib import Path
 
-W, H = 1280, 640
+W, H = 1536, 1024           # drawing units: the photo's size. The social preview is its top 2:1
 HERE = Path(__file__).resolve().parent
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 INK = "#0c1322"
 PANEL = "#121a2c"
-LINE = "#2a3550"
 MUTED = "#5d6b85"
-BLUE = "#6aa8ff"
 SYNTAX = ["#7cc4ff", "#c792ea", "#ffcb6b", "#c3e88d", "#f78c6c", "#89ddff"]
+
+# Screen corners on the canvas, in order: top left, top right, bottom right, bottom left.
+# Sizes follow the layout's angular widths: code 58°, chat and email 44°, video 31°.
+CODE = [(478, 186), (1058, 186), (1058, 548), (478, 548)]
+CHAT = [(113, 256), (456, 230), (456, 505), (113, 478)]
+EMAIL = [(1080, 230), (1423, 256), (1423, 478), (1080, 505)]
+VIDEO = [(628, 18), (908, 18), (923, 170), (613, 170)]
 
 
 class Screen:
@@ -54,16 +61,14 @@ class Screen:
     def circle(self, cx, cy, r, fill, opacity=1.0):
         self.poly([(cx + r * math.cos(a * math.pi / 12), cy + r * math.sin(a * math.pi / 12)) for a in range(24)], fill, opacity)
 
-    def outline(self):
-        return " ".join(f"{x:.1f},{y:.1f}" for x, y in self.quad)
-
     def svg(self):
-        o = self.outline()
+        o = " ".join(f"{x:.1f},{y:.1f}" for x, y in self.quad)
         return "\n".join([
-            f'<polygon points="{o}" fill="{BLUE}" opacity="0.35" filter="url(#glow)"/>',
+            f'<polygon points="{o}" fill="#000000" opacity="0.45" filter="url(#shadow)" transform="translate(0 14)"/>',
+            f'<polygon points="{o}" fill="#9cc7ff" opacity="0.30" filter="url(#glow)"/>',
             f'<polygon points="{o}" fill="{INK}"/>',
             *self.parts,
-            f'<polygon points="{o}" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="1.5" stroke-linejoin="round"/>',
+            f'<polygon points="{o}" fill="none" stroke="#ffffff" stroke-opacity="0.28" stroke-width="1.5" stroke-linejoin="round"/>',
         ])
 
 
@@ -112,8 +117,7 @@ def chat_screen(quad):
         s.rect(30, 70 + i * 52, 140 + (i * 29) % 50, 14, MUTED, 1 if i == 2 else 0.5)
     y = 70
     for i, (w, h) in enumerate([(420, 70), (300, 54), (520, 96), (260, 54), (460, 70), (340, 54)]):
-        mine = i % 2 == 1
-        if mine:
+        if i % 2:
             s.rect(1296 - 40 - w, y, w, h, "#2f6feb")
         else:
             s.circle(300, y + 22, 20, SYNTAX[i % len(SYNTAX)])
@@ -157,49 +161,42 @@ def video_screen(quad):
     return s
 
 
-def scene(with_text):
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" '
-           f'aria-label="Four Mac screens floating in a Meta Quest 3: code in the center, chat on the left, email on the right, video above, with the MacBook below">',
+def scene(with_text, out_w, out_h):
+    photo = base64.b64encode((HERE / "background.jpg").read_bytes()).decode()
+    view_h = W // 2 if with_text else H
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{out_w}" height="{out_h}" viewBox="0 0 {W} {view_h}">',
            "<defs>",
-           '<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">'
-           '<stop offset="0" stop-color="#050a18"/><stop offset="0.55" stop-color="#11284d"/>'
-           '<stop offset="0.85" stop-color="#2c4f86"/><stop offset="1" stop-color="#6b6f9a"/></linearGradient>',
-           '<radialGradient id="dawn" cx="0.5" cy="1" r="0.6"><stop offset="0" stop-color="#f2a65a" stop-opacity="0.55"/>'
-           '<stop offset="1" stop-color="#f2a65a" stop-opacity="0"/></radialGradient>',
-           '<filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="14"/></filter>',
+           '<filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="16"/></filter>',
+           '<filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="18"/></filter>',
+           '<radialGradient id="fade" cx="0" cy="0" r="0.75"><stop offset="0" stop-color="#05070d" stop-opacity="0.8"/>'
+           '<stop offset="1" stop-color="#05070d" stop-opacity="0"/></radialGradient>',
            "</defs>",
-           f'<rect width="{W}" height="{H}" fill="url(#sky)"/>',
-           f'<rect width="{W}" height="{H}" fill="url(#dawn)"/>']
-    rng = random.Random(3)
-    for _ in range(90):
-        x, y = rng.uniform(0, W), rng.uniform(0, H * 0.6)
-        out.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rng.uniform(0.5, 1.6):.1f}" fill="#ffffff" opacity="{rng.uniform(0.2, 0.8):.2f}"/>')
-
-    dy = -18
-    screens = [
-        video_screen([(525, 62 + dy), (755, 62 + dy), (770, 190 + dy), (510, 190 + dy)]),
-        chat_screen([(112, 290 + dy), (382, 262 + dy), (382, 492 + dy), (112, 468 + dy)]),
-        email_screen([(898, 262 + dy), (1168, 290 + dy), (1168, 468 + dy), (898, 492 + dy)]),
-        code_screen([(400, 208 + dy), (880, 208 + dy), (880, 508 + dy), (400, 508 + dy)]),
-    ]
+           f'<image href="data:image/jpeg;base64,{photo}" x="0" y="0" width="{W}" height="{H}"/>',
+           f'<rect width="{W}" height="{H}" fill="#05070d" opacity="0.12"/>']
+    screens = [video_screen(VIDEO), chat_screen(CHAT), email_screen(EMAIL), code_screen(CODE)]
     out += [s.svg() for s in screens]
-
-    # The MacBook the screens come from.
-    out.append('<polygon points="578,534 702,534 706,602 574,602" fill="#1b2232" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1.5"/>')
-    out.append('<polygon points="584,540 696,540 699,596 581,596" fill="#2a4a80" opacity="0.8"/>')
-    out.append('<polygon points="552,602 728,602 744,616 536,616" fill="#2a3245" stroke="#ffffff" stroke-opacity="0.2" stroke-width="1"/>')
-
     if with_text:
         font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
-        out.append(f'<text x="60" y="104" font-family="{font}" font-size="60" font-weight="700" fill="#ffffff" letter-spacing="-1">skyscreens</text>')
-        out.append(f'<text x="62" y="146" font-family="{font}" font-size="24" fill="#c9d6ee">Extra monitors for your Mac,</text>')
-        out.append(f'<text x="62" y="178" font-family="{font}" font-size="24" fill="#c9d6ee">inside a Meta Quest 3.</text>')
-        out.append(f'<text x="1220" y="604" text-anchor="end" font-family="{font}" font-size="18" fill="#c9d6ee" opacity="0.85">Open source · No account · USB-C</text>')
+        out.append(f'<rect x="0" y="0" width="900" height="520" fill="url(#fade)"/>')
+        out.append(f'<text x="52" y="104" font-family="{font}" font-size="74" font-weight="700" fill="#ffffff" letter-spacing="-1.5">skyscreens</text>')
+        out.append(f'<text x="55" y="152" font-family="{font}" font-size="29" fill="#eef3fb">Extra monitors for your Mac,</text>')
+        out.append(f'<text x="55" y="190" font-family="{font}" font-size="29" fill="#eef3fb">inside a Meta Quest 3.</text>')
     out.append("</svg>")
     return "\n".join(out) + "\n"
 
 
+def render(svg, out_w, out_h, target):
+    with tempfile.TemporaryDirectory() as tmp:
+        src, png = Path(tmp) / "scene.svg", Path(tmp) / "scene.png"
+        src.write_text(svg)
+        subprocess.run([CHROME, "--headless=new", "--hide-scrollbars", f"--user-data-dir={tmp}/chrome",
+                        f"--window-size={out_w},{out_h}", f"--screenshot={png}", src.as_uri()],
+                       check=True, capture_output=True)
+        subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "86", str(png), "--out", str(target)],
+                       check=True, capture_output=True)
+    print(f"wrote {target.name}")
+
+
 if __name__ == "__main__":
-    (HERE / "banner.svg").write_text(scene(with_text=False))
-    (HERE / "social-preview.svg").write_text(scene(with_text=True))
-    print("wrote banner.svg and social-preview.svg")
+    render(scene(False, W, H), W, H, HERE / "banner.jpg")
+    render(scene(True, 1280, 640), 1280, 640, HERE / "social-preview.jpg")
