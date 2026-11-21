@@ -3,8 +3,10 @@ name = "xr"
 version = "0.1.0"
 description = "skyscreens headset app: OpenXR + Vulkan, Quest 3 first"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [lib]
 name = "skyscreens"
@@ -22,3 +24,6 @@ ndk-context = "0.1"
 ndk = { version = "0.9", features = ["media", "api-level-29"] }
 jni = "0.21"
 openxr = { version = "0.19", features = ["loaded"] }
+
+[lints]
+workspace = true

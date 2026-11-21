@@ -1,13 +1,36 @@
 [workspace]
-resolver = "2"
-members = ["crates/link", "xr"]
-# The headset app only builds for Android; see xr/build.sh.
-default-members = ["crates/link"]
+resolver = "3"
+members = ["crates/link", "crates/fake-headset", "xr"]
+default-members = ["crates/link", "crates/fake-headset"]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/adrianetti/skyscreens"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unused_qualifications = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+missing_safety_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "deny"
+mem_forget = "deny"
 
 [profile.release]
 lto = true

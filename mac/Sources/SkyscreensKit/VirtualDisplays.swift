@@ -1,5 +1,5 @@
-import CoreGraphics
 import CVirtualDisplay
+import CoreGraphics
 import Foundation
 
 public enum DisplayError: Error, CustomStringConvertible {
@@ -16,21 +16,16 @@ public enum DisplayError: Error, CustomStringConvertible {
     }
 }
 
-/// A set of virtual displays that lives as long as its process.
-///
-/// macOS hands out dead displays (no mode) when a display is created after another was
-/// destroyed in the same process, so all displays are created once, up front. Screens are
-/// hidden and shown again by mirroring them onto the built-in display (`park`), and the
-/// whole set goes away when the process exits.
 public final class VirtualDisplaySet {
     public let specs: [ScreenSpec]
     private var displays: [CGVirtualDisplay] = []
 
     public var ids: [CGDirectDisplayID] { displays.map(\.displayID) }
 
-    /// Fixed vendor and product IDs, so macOS remembers the arrangement between sessions.
     static let vendorID: UInt32 = 0x5353
     static let productID: UInt32 = 0x0001
+    static let pixelsPerInch = 110.0
+    static let millimetersPerInch = 25.4
 
     public init(_ specs: [ScreenSpec]) throws {
         self.specs = specs
@@ -40,19 +35,24 @@ public final class VirtualDisplaySet {
             d.name = spec.name
             d.maxPixelsWide = UInt32(spec.width)
             d.maxPixelsHigh = UInt32(spec.height)
-            // About 110 ppi, a typical non-Retina desktop monitor.
-            d.sizeInMillimeters = CGSize(width: Double(spec.width) / 110 * 25.4, height: Double(spec.height) / 110 * 25.4)
+            d.sizeInMillimeters = Self.physicalSize(spec)
             d.vendorID = Self.vendorID
             d.productID = Self.productID
             d.serialNum = UInt32(i + 1)
-            guard let display = CGVirtualDisplay(descriptor: d), display.apply(Self.settings(spec, refreshRate: spec.refreshRate)) else {
+            guard let display = CGVirtualDisplay(descriptor: d),
+                display.apply(Self.settings(spec, refreshRate: spec.refreshRate))
+            else {
                 throw DisplayError.createFailed(spec.name)
             }
             displays.append(display)
         }
     }
 
-    /// Spins the run loop until every display reports a mode.
+    static func physicalSize(_ spec: ScreenSpec) -> CGSize {
+        let mm = { (pixels: Int) in Double(pixels) / pixelsPerInch * millimetersPerInch }
+        return CGSize(width: mm(spec.width), height: mm(spec.height))
+    }
+
     public func waitUntilReady(timeout: TimeInterval = 5) throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -62,16 +62,13 @@ public final class VirtualDisplaySet {
         throw DisplayError.notReady(zip(specs, ids).filter { CGDisplayCopyDisplayMode($0.1) == nil }.map(\.0.name))
     }
 
-    /// Changes a screen's refresh rate in place, without recreating it.
     @discardableResult
     public func setRefreshRate(_ index: Int, _ hz: Double) -> Bool {
         displays[index].apply(Self.settings(specs[index], refreshRate: hz))
     }
 
-    /// Removes a screen from the desktop by mirroring it onto the built-in display.
     public func park(_ index: Int) throws { try mirror(index, onto: Self.builtInDisplay()) }
 
-    /// Puts a parked screen back on the desktop.
     public func unpark(_ index: Int) throws { try mirror(index, onto: kCGNullDirectDisplay) }
 
     private func mirror(_ index: Int, onto target: CGDirectDisplayID) throws {

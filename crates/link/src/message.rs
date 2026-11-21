@@ -1,6 +1,3 @@
-//! Messages and their binary encoding (little-endian, no external dependencies).
-
-/// What a screen is for, mirrored from the Mac app's layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Role {
@@ -11,8 +8,8 @@ pub enum Role {
     Other = 255,
 }
 
-impl Role {
-    fn from_u8(v: u8) -> Role {
+impl From<u8> for Role {
+    fn from(v: u8) -> Role {
         match v {
             0 => Role::Code,
             1 => Role::Chat,
@@ -23,7 +20,7 @@ impl Role {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Screen {
     pub id: u8,
     pub role: Role,
@@ -33,19 +30,12 @@ pub struct Screen {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Message {
-    /// First message in each direction. The headset describes itself so the Mac can size screens.
     Hello { version: u16, pixels_per_degree: f32, refresh_rate: f32, max_decoders: u8, max_layers: u8 },
-    /// The full set of screens. Sent on connect and whenever it changes.
     Screens(Vec<Screen>),
-    /// One H.264 access unit in Annex B form.
     Video { screen: u8, key: bool, pts_us: u64, data: Vec<u8> },
-    /// A rectangle of BGRA pixels, compressed as one raw LZ4 block.
     Tile { screen: u8, x: u16, y: u16, w: u16, h: u16, lz4: Vec<u8> },
-    /// Cursor position in screen pixels. `screen` 255 means the cursor is on the laptop screen.
     Cursor { screen: u8, x: f32, y: f32, shape: u16 },
-    /// A cursor image (BGRA, LZ4), sent once per shape.
     CursorShape { shape: u16, hot_x: u16, hot_y: u16, w: u16, h: u16, lz4: Vec<u8> },
-    /// The headset asks for a keyframe, for example after taking over a decoder.
     KeyframeRequest { screen: u8 },
     Ping { t_us: u64 },
     Pong { t_us: u64 },
@@ -56,6 +46,8 @@ pub enum DecodeError {
     Truncated,
     UnknownType(u8),
 }
+
+pub const MAX_SCREENS: usize = u8::MAX as usize;
 
 mod tag {
     pub const HELLO: u8 = 1;
@@ -71,69 +63,42 @@ mod tag {
 
 impl Message {
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(self.payload_len() + 32);
+        let mut w = Writer(Vec::with_capacity(self.payload_len() + 32));
         match self {
             Message::Hello { version, pixels_per_degree, refresh_rate, max_decoders, max_layers } => {
-                b.push(tag::HELLO);
-                b.extend(version.to_le_bytes());
-                b.extend(pixels_per_degree.to_le_bytes());
-                b.extend(refresh_rate.to_le_bytes());
-                b.push(*max_decoders);
-                b.push(*max_layers);
+                w.u8(tag::HELLO).u16(*version).f32(*pixels_per_degree).f32(*refresh_rate);
+                w.u8(*max_decoders).u8(*max_layers);
             }
             Message::Screens(screens) => {
-                b.push(tag::SCREENS);
-                b.push(screens.len() as u8);
-                for s in screens {
-                    b.push(s.id);
-                    b.push(s.role as u8);
-                    b.extend(s.width.to_le_bytes());
-                    b.extend(s.height.to_le_bytes());
+                let sent = &screens[..screens.len().min(MAX_SCREENS)];
+                w.u8(tag::SCREENS).u8(u8::try_from(sent.len()).unwrap_or(u8::MAX));
+                for s in sent {
+                    w.u8(s.id).u8(s.role as u8).u16(s.width).u16(s.height);
                 }
             }
             Message::Video { screen, key, pts_us, data } => {
-                b.push(tag::VIDEO);
-                b.push(*screen);
-                b.push(*key as u8);
-                b.extend(pts_us.to_le_bytes());
-                b.extend_from_slice(data);
+                w.u8(tag::VIDEO).u8(*screen).u8(u8::from(*key)).u64(*pts_us).bytes(data);
             }
-            Message::Tile { screen, x, y, w, h, lz4 } => {
-                b.push(tag::TILE);
-                b.push(*screen);
-                for v in [x, y, w, h] {
-                    b.extend(v.to_le_bytes());
-                }
-                b.extend_from_slice(lz4);
+            Message::Tile { screen, x, y, w: width, h, lz4 } => {
+                w.u8(tag::TILE).u8(*screen).u16(*x).u16(*y).u16(*width).u16(*h).bytes(lz4);
             }
             Message::Cursor { screen, x, y, shape } => {
-                b.push(tag::CURSOR);
-                b.push(*screen);
-                b.extend(x.to_le_bytes());
-                b.extend(y.to_le_bytes());
-                b.extend(shape.to_le_bytes());
+                w.u8(tag::CURSOR).u8(*screen).f32(*x).f32(*y).u16(*shape);
             }
-            Message::CursorShape { shape, hot_x, hot_y, w, h, lz4 } => {
-                b.push(tag::CURSOR_SHAPE);
-                for v in [shape, hot_x, hot_y, w, h] {
-                    b.extend(v.to_le_bytes());
-                }
-                b.extend_from_slice(lz4);
+            Message::CursorShape { shape, hot_x, hot_y, w: width, h, lz4 } => {
+                w.u8(tag::CURSOR_SHAPE).u16(*shape).u16(*hot_x).u16(*hot_y).u16(*width).u16(*h).bytes(lz4);
             }
             Message::KeyframeRequest { screen } => {
-                b.push(tag::KEYFRAME_REQUEST);
-                b.push(*screen);
+                w.u8(tag::KEYFRAME_REQUEST).u8(*screen);
             }
             Message::Ping { t_us } => {
-                b.push(tag::PING);
-                b.extend(t_us.to_le_bytes());
+                w.u8(tag::PING).u64(*t_us);
             }
             Message::Pong { t_us } => {
-                b.push(tag::PONG);
-                b.extend(t_us.to_le_bytes());
+                w.u8(tag::PONG).u64(*t_us);
             }
         }
-        b
+        w.0
     }
 
     fn payload_len(&self) -> usize {
@@ -156,14 +121,16 @@ impl Message {
             },
             tag::SCREENS => {
                 let n = r.u8()?;
-                let mut screens = Vec::with_capacity(n as usize);
+                let mut screens = Vec::with_capacity(usize::from(n));
                 for _ in 0..n {
-                    screens.push(Screen { id: r.u8()?, role: Role::from_u8(r.u8()?), width: r.u16()?, height: r.u16()? });
+                    screens.push(Screen { id: r.u8()?, role: Role::from(r.u8()?), width: r.u16()?, height: r.u16()? });
                 }
                 Message::Screens(screens)
             }
             tag::VIDEO => Message::Video { screen: r.u8()?, key: r.u8()? != 0, pts_us: r.u64()?, data: r.rest() },
-            tag::TILE => Message::Tile { screen: r.u8()?, x: r.u16()?, y: r.u16()?, w: r.u16()?, h: r.u16()?, lz4: r.rest() },
+            tag::TILE => {
+                Message::Tile { screen: r.u8()?, x: r.u16()?, y: r.u16()?, w: r.u16()?, h: r.u16()?, lz4: r.rest() }
+            }
             tag::CURSOR => Message::Cursor { screen: r.u8()?, x: r.f32()?, y: r.f32()?, shape: r.u16()? },
             tag::CURSOR_SHAPE => Message::CursorShape {
                 shape: r.u16()?,
@@ -181,6 +148,28 @@ impl Message {
     }
 }
 
+struct Writer(Vec<u8>);
+
+impl Writer {
+    fn u8(&mut self, v: u8) -> &mut Self {
+        self.0.push(v);
+        self
+    }
+    fn u16(&mut self, v: u16) -> &mut Self {
+        self.bytes(&v.to_le_bytes())
+    }
+    fn u64(&mut self, v: u64) -> &mut Self {
+        self.bytes(&v.to_le_bytes())
+    }
+    fn f32(&mut self, v: f32) -> &mut Self {
+        self.bytes(&v.to_le_bytes())
+    }
+    fn bytes(&mut self, v: &[u8]) -> &mut Self {
+        self.0.extend_from_slice(v);
+        self
+    }
+}
+
 struct Reader<'a> {
     b: &'a [u8],
     i: usize,
@@ -190,7 +179,7 @@ impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
         let s = self.b.get(self.i..self.i + N).ok_or(DecodeError::Truncated)?;
         self.i += N;
-        Ok(s.try_into().unwrap())
+        s.try_into().map_err(|_| DecodeError::Truncated)
     }
     fn u8(&mut self) -> Result<u8, DecodeError> {
         Ok(self.take::<1>()?[0])
@@ -215,11 +204,13 @@ impl Reader<'_> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn every_message_round_trips() {
-        let all = vec![
+    fn every_kind() -> Vec<Message> {
+        vec![
             Message::Hello { version: 1, pixels_per_degree: 25.0, refresh_rate: 90.0, max_decoders: 4, max_layers: 16 },
-            Message::Screens(vec![Screen { id: 0, role: Role::Code, width: 1616, height: 1008 }, Screen { id: 3, role: Role::Video, width: 1296, height: 736 }]),
+            Message::Screens(vec![
+                Screen { id: 0, role: Role::Code, width: 1616, height: 1008 },
+                Screen { id: 3, role: Role::Video, width: 1296, height: 736 },
+            ]),
             Message::Video { screen: 1, key: true, pts_us: 123_456_789, data: vec![0, 0, 0, 1, 0x67, 9, 9] },
             Message::Tile { screen: 2, x: 330, y: 700, w: 320, h: 24, lz4: vec![1, 2, 3] },
             Message::Cursor { screen: 0, x: 812.5, y: 40.25, shape: 3 },
@@ -227,8 +218,12 @@ mod tests {
             Message::KeyframeRequest { screen: 2 },
             Message::Ping { t_us: 42 },
             Message::Pong { t_us: 42 },
-        ];
-        for m in all {
+        ]
+    }
+
+    #[test]
+    fn every_message_round_trips() {
+        for m in every_kind() {
             assert_eq!(Message::decode(&m.encode()), Ok(m));
         }
     }
@@ -239,5 +234,29 @@ mod tests {
         for n in 0..b.len() {
             assert_eq!(Message::decode(&b[..n]), Err(DecodeError::Truncated), "length {n}");
         }
+    }
+
+    #[test]
+    fn unknown_tags_are_rejected() {
+        assert_eq!(Message::decode(&[0]), Err(DecodeError::UnknownType(0)));
+        assert_eq!(Message::decode(&[200, 1, 2]), Err(DecodeError::UnknownType(200)));
+    }
+
+    #[test]
+    fn unknown_roles_decode_as_other() {
+        let mut b = Message::Screens(vec![Screen { id: 0, role: Role::Code, width: 16, height: 16 }]).encode();
+        b[3] = 77;
+        let Ok(Message::Screens(s)) = Message::decode(&b) else { panic!("screens expected") };
+        assert_eq!(s[0].role, Role::Other);
+    }
+
+    #[test]
+    fn the_wire_format_is_stable() {
+        let hello =
+            Message::Hello { version: 1, pixels_per_degree: 25.0, refresh_rate: 90.0, max_decoders: 4, max_layers: 16 };
+        assert_eq!(hello.encode(), [1, 1, 0, 0, 0, 0xc8, 0x41, 0, 0, 0xb4, 0x42, 4, 16]);
+        let video = Message::Video { screen: 2, key: true, pts_us: 0x0102, data: vec![0xaa] };
+        assert_eq!(video.encode(), [3, 2, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0xaa]);
+        assert_eq!(Message::KeyframeRequest { screen: 9 }.encode(), [7, 9]);
     }
 }

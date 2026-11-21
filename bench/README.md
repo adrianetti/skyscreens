@@ -14,3 +14,9 @@ The measurements and simulations behind [docs/architecture.md](../docs/architect
 The virtual display tests make your screen flicker for a few seconds while displays are added and removed. They use `CGVirtualDisplay`, a private macOS API.
 
 `params.json` uses 2560×1440 screens and `params_1x.json` uses headset-sized screens. Both come from the encoder benchmarks. `results_encode_codecs.txt` is the raw output of `encode_codecs.swift` on the M2.
+
+## Notes
+
+- `netsim.py` describes each link by bandwidth in Mbps (`bw`), one-way base delay in ms (`base`), mean jitter in ms (`jit`), random loss (`loss`), burst loss as enter, stay and in-burst loss probabilities (`burst`), stalls per second (`spikes`), and stall length range in ms (`spike`). Once motion stops, it refreshes the screen losslessly in the background at the lowest priority.
+- The encoder benchmarks scroll content that repeats every 24 lines, so the loop is seamless, and add light per-frame noise to the video content, like real camera footage. The typing patch is the changed line around the caret, 320×24 pixels.
+- `sharpness.swift` compares capture scale (source pixels per point) and compositor filtering against an ideal rendering made at headset resolution, under small head movements.

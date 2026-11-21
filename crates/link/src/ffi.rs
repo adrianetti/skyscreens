@@ -1,176 +1,206 @@
-//! C ABI for the Mac app (Swift). The Mac listens; the headset connects.
-//!
-//! Over USB, `adb reverse tcp:7243 tcp:7243` makes the headset's localhost reach the Mac.
+use crate::message::{Role, Screen};
+use crate::sender::Priority;
+use crate::server::{Event, Server};
+use std::ffi::c_void;
+use std::sync::Arc;
 
-use crate::message::{Message, Role, Screen};
-use crate::receiver::Reassembler;
-use crate::sender::{Priority, Sender};
-use crate::TCP_FRAGMENT;
-use std::io::Read;
-use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread;
+pub const SK_DEFAULT_PORT: u16 = 7243;
+pub const SK_EVENT_KEYFRAME_REQUEST: u8 = 1;
+pub const SK_EVENT_PONG: u8 = 2;
+pub const SK_PRIORITY_CONTROL: u8 = 0;
+pub const SK_PRIORITY_CURSOR: u8 = 1;
+pub const SK_PRIORITY_FOCUSED: u8 = 2;
+pub const SK_PRIORITY_VIDEO: u8 = 3;
+pub const SK_PRIORITY_BACKGROUND: u8 = 4;
+pub const SK_PRIORITY_REFINE: u8 = 5;
 
-/// A listening Mac endpoint. Accepts one headset at a time and keeps listening after it leaves.
+const _: () = {
+    assert!(SK_DEFAULT_PORT == crate::DEFAULT_PORT);
+    assert!(SK_PRIORITY_CONTROL == Priority::Control as u8);
+    assert!(SK_PRIORITY_CURSOR == Priority::Cursor as u8);
+    assert!(SK_PRIORITY_FOCUSED == Priority::Focused as u8);
+    assert!(SK_PRIORITY_VIDEO == Priority::Video as u8);
+    assert!(SK_PRIORITY_BACKGROUND == Priority::Background as u8);
+    assert!(SK_PRIORITY_REFINE == Priority::Refine as u8);
+};
+
+#[derive(Debug)]
 pub struct SkServer {
-    sender: Mutex<Option<Sender>>,
-    screens: Mutex<Vec<Screen>>,
-    connected: AtomicBool,
-    on_message: Mutex<Option<(Callback, SendPtr)>>,
+    _opaque: (),
 }
 
-/// (context, kind, screen, value): kind 1 = keyframe request, 2 = pong with the echoed timestamp.
-type Callback = extern "C" fn(*mut std::ffi::c_void, u8, u8, u64);
+pub type SkCallback = extern "C" fn(ctx: *mut c_void, kind: u8, screen: u8, value: u64);
 
 #[derive(Clone, Copy)]
-struct SendPtr(*mut std::ffi::c_void);
-unsafe impl Send for SendPtr {}
+struct Context(*mut c_void);
 
-fn priority(p: u8) -> Priority {
-    match p {
-        0 => Priority::Control,
-        1 => Priority::Cursor,
-        2 => Priority::Focused,
-        3 => Priority::Video,
-        4 => Priority::Background,
-        _ => Priority::Refine,
-    }
-}
+unsafe impl Send for Context {}
+unsafe impl Sync for Context {}
 
-impl SkServer {
-    fn serve(self: Arc<Self>, listener: TcpListener) {
-        for stream in listener.incoming().flatten() {
-            let _ = stream.set_nodelay(true);
-            let sender = Sender::new(TCP_FRAGMENT);
-            sender.send(255, Priority::Control, &Message::Screens(self.screens.lock().unwrap().clone()));
-            *self.sender.lock().unwrap() = Some(sender.clone());
-            self.connected.store(true, Ordering::SeqCst);
-            let reader = stream.try_clone().ok();
-            let me = self.clone();
-            let read = thread::spawn(move || {
-                if let Some(r) = reader {
-                    me.read_loop(r);
-                }
-            });
-            let _ = sender.pump(&stream);
-            let _ = stream.shutdown(std::net::Shutdown::Both);
-            let _ = read.join();
-            self.connected.store(false, Ordering::SeqCst);
-            *self.sender.lock().unwrap() = None;
-        }
-    }
-
-    /// Reports what the headset sends back to the app through the callback.
-    fn read_loop(&self, mut stream: TcpStream) {
-        let mut r = Reassembler::default();
-        let mut buf = vec![0u8; 64 * 1024];
-        while let Ok(n) = stream.read(&mut buf) {
-            if n == 0 {
-                break;
-            }
-            let Ok(msgs) = r.feed(&buf[..n]) else { break };
-            let Some((cb, ctx)) = *self.on_message.lock().unwrap() else { continue };
-            for m in msgs {
-                match m {
-                    Message::KeyframeRequest { screen } => cb(ctx.0, 1, screen, 0),
-                    Message::Pong { t_us } => cb(ctx.0, 2, 0, t_us),
-                    _ => {}
-                }
-            }
-        }
-        if let Some(s) = self.sender.lock().unwrap().as_ref() {
-            s.close();
-        }
-    }
-
-    fn send(&self, channel: u8, p: u8, m: &Message, latest_only: bool) -> bool {
-        match self.sender.lock().unwrap().as_ref() {
-            Some(s) if latest_only => s.replace(channel, priority(p), m),
-            Some(s) => s.send(channel, priority(p), m),
-            None => return false,
-        }
-        true
-    }
-}
-
-/// Starts listening on `port`. Returns null if the port is taken.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sk_server_start(port: u16) -> *const SkServer {
-    let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) else { return std::ptr::null() };
-    let server = Arc::new(SkServer {
-        sender: Mutex::new(None),
-        screens: Mutex::new(Vec::new()),
-        connected: AtomicBool::new(false),
-        on_message: Mutex::new(None),
-    });
-    let s = server.clone();
-    thread::spawn(move || s.serve(listener));
-    Arc::into_raw(server)
+    Server::bind(port).map_or(std::ptr::null(), |s| Arc::into_raw(s).cast())
 }
 
-/// # Safety
-/// `server` must come from `sk_server_start`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sk_server_connected(server: *const SkServer) -> bool {
-    (*server).connected.load(Ordering::SeqCst)
+    unsafe { handle(server) }.is_some_and(Server::is_connected)
 }
 
-/// Called from a link thread when the headset asks for something.
-///
-/// # Safety
-/// `server` must come from `sk_server_start`; `ctx` must stay valid while the server runs.
-#[no_mangle]
-pub unsafe extern "C" fn sk_server_on_message(server: *const SkServer, cb: Callback, ctx: *mut std::ffi::c_void) {
-    *(*server).on_message.lock().unwrap() = Some((cb, SendPtr(ctx)));
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sk_server_on_message(server: *const SkServer, cb: SkCallback, ctx: *mut c_void) {
+    let Some(server) = (unsafe { handle(server) }) else { return };
+    let ctx = Context(ctx);
+    server.on_event(move |event| {
+        let ctx = ctx;
+        match event {
+            Event::KeyframeRequest { screen } => cb(ctx.0, SK_EVENT_KEYFRAME_REQUEST, screen, 0),
+            Event::Pong { t_us } => cb(ctx.0, SK_EVENT_PONG, 0, t_us),
+        }
+    });
 }
 
-/// Sets the screen list (ids, roles, widths, heights: `count` entries each) and sends it.
-///
-/// # Safety
-/// Each array must hold `count` elements.
-#[no_mangle]
-pub unsafe extern "C" fn sk_set_screens(server: *const SkServer, count: u8, ids: *const u8, roles: *const u8, widths: *const u16, heights: *const u16) {
-    let n = count as usize;
-    let screens: Vec<Screen> = (0..n)
-        .map(|i| Screen {
-            id: *ids.add(i),
-            role: match *roles.add(i) {
-                0 => Role::Code,
-                1 => Role::Chat,
-                2 => Role::Email,
-                3 => Role::Video,
-                _ => Role::Other,
-            },
-            width: *widths.add(i),
-            height: *heights.add(i),
-        })
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sk_set_screens(
+    server: *const SkServer,
+    count: u8,
+    ids: *const u8,
+    roles: *const u8,
+    widths: *const u16,
+    heights: *const u16,
+) -> bool {
+    let Some(server) = (unsafe { handle(server) }) else { return false };
+    let n = usize::from(count);
+    let (ids, roles, widths, heights) =
+        unsafe { (slice(ids, n), slice(roles, n), slice(widths, n), slice(heights, n)) };
+    let screens = (0..n)
+        .map(|i| Screen { id: ids[i], role: Role::from(roles[i]), width: widths[i], height: heights[i] })
         .collect();
-    *(*server).screens.lock().unwrap() = screens.clone();
-    (*server).send(255, 0, &Message::Screens(screens), false);
+    server.set_screens(screens)
 }
 
-/// # Safety
-/// `data` must point to `len` bytes.
-#[no_mangle]
-pub unsafe extern "C" fn sk_send_video(server: *const SkServer, screen: u8, key: bool, pts_us: u64, data: *const u8, len: usize, prio: u8) -> bool {
-    let data = std::slice::from_raw_parts(data, len).to_vec();
-    (*server).send(screen.wrapping_mul(4), prio, &Message::Video { screen, key, pts_us, data }, false)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sk_send_video(
+    server: *const SkServer,
+    screen: u8,
+    key: bool,
+    pts_us: u64,
+    data: *const u8,
+    len: usize,
+    priority: u8,
+) -> bool {
+    let Some(server) = (unsafe { handle(server) }) else { return false };
+    let data = unsafe { slice(data, len) }.to_vec();
+    server.send_video(screen, key, pts_us, data, Priority::from(priority))
 }
 
-/// # Safety
-/// `lz4` must point to `len` bytes.
-#[no_mangle]
-pub unsafe extern "C" fn sk_send_tile(server: *const SkServer, screen: u8, x: u16, y: u16, w: u16, h: u16, lz4: *const u8, len: usize, prio: u8) -> bool {
-    let lz4 = std::slice::from_raw_parts(lz4, len).to_vec();
-    (*server).send(screen.wrapping_mul(4) + 1, prio, &Message::Tile { screen, x, y, w, h, lz4 }, false)
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sk_send_tile(
+    server: *const SkServer,
+    screen: u8,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+    lz4: *const u8,
+    len: usize,
+    priority: u8,
+) -> bool {
+    let Some(server) = (unsafe { handle(server) }) else { return false };
+    let lz4 = unsafe { slice(lz4, len) }.to_vec();
+    server.send_tile(screen, [x, y, w, h], lz4, Priority::from(priority))
 }
 
-/// Sends the cursor position; an older unsent position is dropped.
-///
-/// # Safety
-/// `server` must come from `sk_server_start`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn sk_send_cursor(server: *const SkServer, screen: u8, x: f32, y: f32, shape: u16) -> bool {
-    (*server).send(254, 1, &Message::Cursor { screen, x, y, shape }, true)
+    unsafe { handle(server) }.is_some_and(|s| s.send_cursor(screen, x, y, shape))
+}
+
+unsafe fn handle<'a>(server: *const SkServer) -> Option<&'a Server> {
+    unsafe { server.cast::<Server>().as_ref() }
+}
+
+unsafe fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if ptr.is_null() || len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(ptr, len) } }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Message, Reassembler, Screen};
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
+
+    static LAST_PONG: AtomicU64 = AtomicU64::new(0);
+
+    extern "C" fn record(_ctx: *mut c_void, kind: u8, _screen: u8, value: u64) {
+        if kind == SK_EVENT_PONG {
+            LAST_PONG.store(value, Ordering::SeqCst);
+        }
+    }
+
+    fn handle_for_tests() -> (*const SkServer, std::net::SocketAddr) {
+        let server = Server::listen(TcpListener::bind("127.0.0.1:0").unwrap()).unwrap();
+        let addr = server.local_addr();
+        (Arc::into_raw(server).cast(), addr)
+    }
+
+    fn eventually(condition: impl Fn() -> bool) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if condition() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    }
+
+    #[test]
+    fn null_handles_are_rejected_without_crashing() {
+        let null = std::ptr::null();
+        unsafe {
+            assert!(!sk_server_connected(null));
+            assert!(!sk_set_screens(null, 0, std::ptr::null(), std::ptr::null(), std::ptr::null(), std::ptr::null()));
+            assert!(!sk_send_video(null, 0, true, 0, std::ptr::null(), 0, SK_PRIORITY_FOCUSED));
+            assert!(!sk_send_tile(null, 0, 0, 0, 1, 1, std::ptr::null(), 0, SK_PRIORITY_REFINE));
+            assert!(!sk_send_cursor(null, 0, 0.0, 0.0, 0));
+            sk_server_on_message(null, record, std::ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn the_c_interface_streams_to_a_headset_and_reports_pongs() {
+        let (server, addr) = handle_for_tests();
+        let (ids, roles, widths, heights) = ([0u8], [0u8], [1616u16], [1008u16]);
+        unsafe {
+            sk_server_on_message(server, record, std::ptr::null_mut());
+            sk_set_screens(server, 1, ids.as_ptr(), roles.as_ptr(), widths.as_ptr(), heights.as_ptr());
+        }
+        let mut headset = TcpStream::connect(addr).unwrap();
+        assert!(eventually(|| unsafe { sk_server_connected(server) }));
+        let frame = [0u8, 0, 0, 1, 0x65, 7];
+        assert!(unsafe { sk_send_video(server, 0, true, 5, frame.as_ptr(), frame.len(), SK_PRIORITY_FOCUSED) });
+
+        headset.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut reassembler = Reassembler::default();
+        let mut got = Vec::new();
+        let mut buf = [0u8; 4096];
+        while got.len() < 2 {
+            let n = headset.read(&mut buf).unwrap();
+            got.extend(reassembler.feed(&buf[..n]).unwrap());
+        }
+        let screen = Screen { id: 0, role: Role::Code, width: 1616, height: 1008 };
+        assert_eq!(got[0], Message::Screens(vec![screen]));
+        assert_eq!(got[1], Message::Video { screen: 0, key: true, pts_us: 5, data: frame.to_vec() });
+
+        let reply = crate::Sender::new(crate::TCP_FRAGMENT);
+        reply.send(crate::channel::HEADSET_CONTROL, Priority::Control, &Message::Pong { t_us: 4242 }).unwrap();
+        reply.close();
+        reply.pump(&mut headset).unwrap();
+        headset.flush().unwrap();
+        assert!(eventually(|| LAST_PONG.load(Ordering::SeqCst) == 4242));
+    }
 }

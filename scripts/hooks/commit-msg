@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec python3 "$(git rev-parse --show-toplevel)/scripts/commit_msg.py" --file "$1"

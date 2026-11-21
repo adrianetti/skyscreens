@@ -1,0 +1,15 @@
+[package]
+name = "fake-headset"
+version = "0.1.0"
+description = "Headless stand-in for the headset app, used by tests and evals of the Mac side"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+link = { path = "../link" }
+
+[lints]
+workspace = true

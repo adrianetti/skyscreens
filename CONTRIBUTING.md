@@ -11,27 +11,28 @@ Thanks for helping. skyscreens is early, so even a short test report on your own
 
 ## Getting set up
 
-Follow the [development guide](docs/development.md). Before you open a pull request, these must pass:
+Follow the [development guide](docs/development.md), then enable the git hooks with `scripts/install-hooks.sh`. Before you open a pull request, this must pass:
 
 ```sh
-cargo test -p link
-cargo build --release -p link && (cd mac && swift build -c release)
-xr/build.sh
+scripts/check.sh
 ```
 
-If your change affects what runs on the headset, test it there too. Put the latency line from `mac/scripts/run.sh stream` in the pull request.
+CI runs the same script on every pull request. If your change affects capture, encoding or the protocol, run `scripts/eval.sh mac` too. If it affects the headset, run `scripts/eval.sh quest` with a Quest connected. Paste the JSON summary into the pull request.
 
 ## How we work
 
 - **Measure first.** Performance claims need numbers from `skyscreens stream`, `skyscreens probe` or `bench/`, with the hardware they came from.
-- **Keep it small.** Small, focused pull requests, direct code, few dependencies. Comments explain why, not what.
-- **Protocol changes** go in `crates/link/src/message.rs`, with a round-trip test and a `PROTOCOL_VERSION` bump if older apps can't read the new format. Keep `crates/link/src/ffi.rs` and `mac/Sources/CLink/include/link.h` in sync.
+- **Keep it small.** Small, focused pull requests, direct code, few dependencies.
+- **Code standards.** No comments in code, strict lints, a test for every behavior change. [AGENTS.md](AGENTS.md#code-standards) lists them, and `scripts/check.sh` enforces them.
+- **Protocol changes** go in `crates/link/src/message.rs`, with a round-trip test and a `PROTOCOL_VERSION` bump if older apps can't read the new format. `mac/Sources/CLink/include/link.h` is generated from `crates/link/src/ffi.rs`. Run `scripts/check.sh fix` after changing it.
 - **Headset code** is plain OpenXR and Vulkan. Vendor-specific code goes in `xr/src/platform.rs` and is chosen by detected extensions, never by device name.
 - **Commit messages** are one line in [Conventional Commits](https://www.conventionalcommits.org) style: `feat(xr): decode into AImageReader`, `fix(mac): …`, `docs: …`.
 
 ## Using an AI agent
 
-Agents are welcome here. [AGENTS.md](AGENTS.md) gives yours the commands, the rules and the known pitfalls. Review what the agent produces as carefully as your own code, and test it on the device when the change touches the device.
+Agents are welcome here. [AGENTS.md](AGENTS.md) gives yours the commands, the rules and the known pitfalls. Its definition of done is concrete: `scripts/check.sh` passes, and the evals pass for the parts the change touches. An agent can check all of that itself. Review what the agent produces as carefully as your own code.
+
+Maintainers can also mention `@claude` in an issue or pull request, and the Claude workflow picks it up. Pull requests from this repository get an automatic Claude review. Both need a `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` repository secret, and they skip quietly without one.
 
 ## License
 

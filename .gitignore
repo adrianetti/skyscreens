@@ -34,3 +34,7 @@ captures/
 
 # Rust
 target/
+
+# Python
+__pycache__/
+.ruff_cache/

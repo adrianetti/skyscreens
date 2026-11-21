@@ -1,9 +1,4 @@
-#!/bin/zsh
-# Builds Skyscreens.app, so macOS grants Screen Recording to skyscreens itself
-# rather than to the terminal that launched it.
-# Signs with a stable identity so the permission survives rebuilds: SKYSCREENS_SIGN_ID if set,
-# else the first "Apple Development" or "Skyscreens" identity in the keychain. Without one the
-# signature is ad-hoc, and macOS treats every rebuild as a new app that needs the permission again.
+#!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
 (cd .. && PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH" cargo build --release -p link)

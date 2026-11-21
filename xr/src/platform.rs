@@ -1,9 +1,7 @@
-//! Everything vendor-specific. Features come from what the runtime reports, never from the device name.
-
 use openxr as xr;
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // cylinder, filters and surface swapchains are logged now and used from Phase 1
+#[expect(clippy::struct_excessive_bools, reason = "one flag per optional OpenXR extension")]
 pub struct Platform {
     pub passthrough: bool,
     pub cylinder: bool,
@@ -25,7 +23,7 @@ impl Platform {
         }
     }
 
-    pub fn enable(&self, e: &mut xr::ExtensionSet) {
+    pub fn enable(self, e: &mut xr::ExtensionSet) {
         e.fb_passthrough = self.passthrough;
         e.khr_composition_layer_cylinder = self.cylinder;
         e.fb_composition_layer_settings = self.layer_settings;

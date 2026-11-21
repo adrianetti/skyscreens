@@ -9,7 +9,7 @@
 skyscreens adds virtual displays to your Mac and streams them to the headset, where they float in your room like real monitors. macOS treats them as real displays, so windows, Spaces, your keyboard, trackpad and cursor work across them as usual. You still see your desk through passthrough.
 
 > [!IMPORTANT]
-> **Early development. Nothing to install yet.** Phase 1 of 5 is built: one Mac screen streamed to the Quest over USB-C, with a live latency readout. Its first test on the headset is next. See the [roadmap](#roadmap), or [help build it](CONTRIBUTING.md).
+> **Early development. Nothing to install yet.** Phase 1 of 5 is built: one Mac screen streamed to the Quest over USB-C, with a live latency readout. The Mac side passes its end-to-end eval, and the first test on the headset is next. See the [roadmap](#roadmap), or [help build it](CONTRIBUTING.md).
 
 ## Why skyscreens
 
@@ -38,7 +38,7 @@ Next come a lossless LZ4 lane for text, a cursor drawn locally in the headset, 3
 | Phase | What you get | Status |
 |---|---|---|
 | 0 | Toolchains, plus an empty Quest app with passthrough and a test screen | Done, verified on a Quest 3 |
-| 1 | One Mac screen over USB-C, with a latency readout | Built, device test next |
+| 1 | One Mac screen over USB-C, with a latency readout | Built, Mac eval passing, device test next |
 | 2 | Lossless text, a local cursor, 3–4 screens, one-shortcut On/Off | Planned |
 | 3 | Wi-Fi and phone hotspot, pairing, encryption | Planned |
 | 4 | Moving and resizing screens, Quest controllers and keyboard, settings | Planned |
@@ -53,6 +53,7 @@ Next come a lossless LZ4 lane for text, a cursor drawn locally in the headset, 3
 | Typing latency over USB, full design, simulated | 21 ms p50 |
 | Quest 3 showing a 1616×1008 test screen | 90 FPS, about 1–2 ms of app time per frame |
 | Quest 3 hardware decoders | 16 H.264/HEVC instances, up to 8192×8192 |
+| Mac pipeline end to end, 1616×1008 test pattern, to a local fake headset (`scripts/eval.sh mac`, M2) | 57 fps, capture to received p50 8.8 ms, p95 12.9 ms |
 
 The numbers, their sources and the open questions are in [docs/architecture.md](docs/architecture.md#key-findings-and-the-decisions-they-drove).
 
@@ -69,7 +70,8 @@ The numbers, their sources and the open questions are in [docs/architecture.md](
 The [development guide](docs/development.md) covers the full setup: toolchains, code signing, the Quest, and troubleshooting.
 
 ```sh
-cargo test -p link                 # protocol tests, no devices needed
+scripts/check.sh                   # every check CI runs: formatting, lints, tests, both apps
+scripts/eval.sh mac                # Mac pipeline end to end against a fake headset
 mac/scripts/bundle.sh              # builds mac/.build/Skyscreens.app
 xr/build.sh --install              # builds the headset APK and installs it over adb
 mac/scripts/run.sh stream          # streams one screen to the plugged-in Quest
@@ -80,14 +82,16 @@ mac/scripts/run.sh stream          # streams one screen to the plugged-in Quest
 | Path | What's there |
 |---|---|
 | [`mac/`](mac) | Swift package: the `skyscreens` CLI, the `skyscreens-displays` helper, capture, encoding, the streamer |
-| [`crates/link/`](crates/link) | Rust: the wire format, priority sender, reassembler, and the C interface for the Mac app |
+| [`crates/link/`](crates/link) | Rust: the wire format, priority sender, reassembler, Mac server, and the C interface for the Mac app |
+| [`crates/fake-headset/`](crates/fake-headset) | Rust: a headless stand-in for the headset, used by tests and evals |
+| [`scripts/`](scripts) | The check gate, the evals, the git hooks |
 | [`xr/`](xr) | Rust: the headset app (OpenXR, Vulkan, MediaCodec), built into an APK without Gradle |
 | [`bench/`](bench) | The benchmarks and simulations behind the design |
 | [`docs/`](docs) | Architecture, the development guide, and the images used here |
 
 ## For AI agents
 
-Using an AI coding agent on this repo? Point it to [AGENTS.md](AGENTS.md). It covers the commands, the rules, and the pitfalls already found. Agents that are only researching the project can start from [llms.txt](llms.txt), a short index of everything here.
+Using an AI coding agent on this repo? Point it to [AGENTS.md](AGENTS.md). It covers the commands, the code standards, and the pitfalls already found. Its definition of done is a command the agent can run itself: `scripts/check.sh`, plus `scripts/eval.sh` for the parts a change touches. Agents that are only researching the project can start from [llms.txt](llms.txt), a short index of everything here.
 
 ## Contributing
 

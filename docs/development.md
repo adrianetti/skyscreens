@@ -4,7 +4,7 @@ This guide takes you from a fresh Mac to a Mac screen streaming into a Quest 3. 
 
 - [What you need](#what-you-need)
 - [Install the toolchains](#install-the-toolchains)
-- [Build and test without devices](#build-and-test-without-devices)
+- [Checks, tests and evals](#checks-tests-and-evals)
 - [Code signing](#code-signing)
 - [Run the Mac app](#run-the-mac-app)
 - [Set up the Quest](#set-up-the-quest)
@@ -30,9 +30,16 @@ xcode-select --install
 
 ```sh
 brew install rustup
-export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"   # add this line to ~/.zshrc
-rustup default stable
-rustup target add aarch64-linux-android
+export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
+rustup toolchain install
+```
+
+Add the `export` line to `~/.zshrc` too. `rustup toolchain install` reads `rust-toolchain.toml` and installs the pinned Rust version, with rustfmt, clippy and the Android target.
+
+**Check tools.** `scripts/check.sh` needs these:
+
+```sh
+brew install cbindgen cargo-deny shellcheck actionlint uv
 ```
 
 **Android SDK, NDK and JDK** for the headset app. The headset app has no Java code and needs no Gradle, only these packages:
@@ -47,17 +54,39 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 $SDK/cmdline-tools/latest/bin/android --n
 
 Use the `android` tool as shown. `sdkmanager` from the same folder can finish without installing anything. To check what is installed, run the same tool with `sdk list` instead of `sdk install …`.
 
-`xr/build.sh` expects these exact versions. If your SDK lives somewhere else, set `ANDROID_HOME`, `ANDROID_NDK_HOME` and `JAVA_HOME` before running it. On its first run, the script also downloads the Khronos OpenXR loader (version 1.1.65) from Maven Central and caches it in `target/apk/`.
+`xr/build.sh` expects these exact versions (they live in `scripts/android-env.sh`). If your SDK lives somewhere else, set `ANDROID_HOME` and `JAVA_HOME` before running it. On its first run, the script also downloads the Khronos OpenXR loader (version 1.1.65) from Maven Central, checks its SHA-256, and caches it in `target/apk/`.
 
-## Build and test without devices
+## Checks, tests and evals
+
+One script runs every check, and CI runs the same script:
 
 ```sh
-cargo test -p link                                          # protocol and transport tests
-cargo build --release -p link && (cd mac && swift build -c release)   # Mac code compiles
-xr/build.sh                                                 # headset APK in target/apk/skyscreens.apk
+scripts/check.sh          # everything; must pass before a change is done
+scripts/check.sh fast     # formatting, lints and Rust tests, in about 20 seconds
+scripts/check.sh fix      # apply the formatters and regenerate mac/Sources/CLink/include/link.h
 ```
 
-All three must pass before a change is done. There is no CI yet.
+| Stage | What it checks |
+|---|---|
+| `scripts` | No comments in code, script tests, ruff, shellcheck, actionlint |
+| `rust` | rustfmt, clippy (pedantic, warnings are errors), unit, property and loopback tests, `link.h` drift, `cargo deny` |
+| `swift` | `swift format` (strict), build with warnings as errors, Swift Testing suites, bench typecheck |
+| `android` | clippy for `aarch64-linux-android`, then the APK |
+
+Enable the git hooks once. Then `pre-commit` runs `scripts/check.sh fast`, and `commit-msg` checks the Conventional Commits format:
+
+```sh
+scripts/install-hooks.sh
+```
+
+The evals run the real apps end to end and print a JSON report. They also save their logs in `target/eval/`:
+
+```sh
+scripts/eval.sh mac       # Mac pipeline against a fake headset; needs the Screen Recording grant
+scripts/eval.sh quest     # full pipeline on a Quest connected over USB
+```
+
+`scripts/eval.sh mac` adds a virtual screen for about 12 seconds and streams a moving test pattern. Then it fails on a wrong screen list, an undecodable keyframe, an unanswered keyframe request, fewer than 30 fps, a round trip over 60 ms, or a virtual screen left behind. [AGENTS.md](../AGENTS.md#evals) has the details.
 
 ## Code signing
 
@@ -103,7 +132,7 @@ Always run commands through the bundle, so macOS checks Screen Recording for Sky
 | `mac/scripts/run.sh status` | Prints the running screens as JSON, or `off` |
 | `mac/scripts/run.sh off` | Removes the screens. macOS moves their windows back to the laptop |
 | `mac/scripts/run.sh probe [hz]` | Measures capture and encode latency on a test screen. Your screen may flicker while the test screen is added |
-| `mac/scripts/run.sh stream` | Phase 1: streams one screen to the Quest over USB |
+| `mac/scripts/run.sh stream` | Phase 1: streams one screen to the Quest over USB. `--seconds N` stops after N seconds and prints a JSON summary, `--no-headset` skips adb, `--test-pattern` animates a bar on the screen |
 
 The first `permission` adds Skyscreens to System Settings → Privacy & Security → Screen & System Audio Recording. Switch it on there, then run `permission` again. It should print `screen recording: allowed`. To open that settings pane directly:
 
@@ -151,7 +180,9 @@ The new screen appears in System Settings → Displays like a monitor. Drag a wi
 connected     60 fps   12.3 Mbps  encode  6.1 ms  capture->decoded on Quest p50  18.0  p95  24.0 ms
 ```
 
-(The numbers above are an example, not a measurement.) The round trip runs from the moment ScreenCaptureKit delivers a frame to the moment the Quest's decoder outputs it, plus one USB hop back. Ctrl-C stops the stream and removes the screen.
+(The numbers above are an example, not a measurement.) The round trip runs from the moment ScreenCaptureKit delivers a frame to the moment the Quest's decoder outputs it, plus one USB hop back. Ctrl-C stops the stream, prints a `summary {…}` JSON line and removes the screen.
+
+ScreenCaptureKit sends a frame only when something on the screen changes. To measure with steady motion, add `--test-pattern`. `scripts/eval.sh quest` does this for you.
 
 ## Logs and debugging
 
@@ -175,7 +206,9 @@ connected     60 fps   12.3 Mbps  encode  6.1 ms  capture->decoded on Quest p50 
 | `port 7243 is busy` | Another stream is running. Stop it, or find it with `lsof -nP -iTCP:7243` |
 | The streamer prints `waiting...` forever | The headset app isn't connected. Check `adb reverse --list` and the headset log |
 | The headset log shows a decoder error | MediaCodec may reject a low-latency key. Remove `operating-rate` or `vendor.qti-ext-dec-low-latency.enable` in `xr/src/decoder.rs` and rebuild |
-| `xr/build.sh` can't find a tool | Install the exact SDK package versions listed above, or set `ANDROID_HOME`, `ANDROID_NDK_HOME` and `JAVA_HOME` |
+| `xr/build.sh` can't find a tool | Install the exact SDK package versions listed above, or set `ANDROID_HOME` and `JAVA_HOME`. The NDK must be `27.2.12479018` under `$ANDROID_HOME/ndk` |
+| `check.sh` says `link.h is stale` | You changed `crates/link/src/ffi.rs`. Run `scripts/check.sh fix` |
+| `check.sh` reports a comment | Code carries no comments. Rename until the code explains itself, and move design reasons to `docs/architecture.md` |
 | `cargo: command not found` | Add rustup to your `PATH` (see [Install the toolchains](#install-the-toolchains)) |
 
 Something else? [Open an issue](https://github.com/adrianetti/skyscreens/issues/new/choose) with your Mac model, macOS version, headset and OS version, and the logs from both sides.

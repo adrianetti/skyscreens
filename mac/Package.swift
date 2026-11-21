@@ -2,8 +2,8 @@
 import Foundation
 import PackageDescription
 
-// The Rust link crate, built by scripts/bundle.sh as a static library.
-let rustLib = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../target/release").standardized.path
+let rustLib = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../target/release")
+    .standardized.path
 
 let package = Package(
     name: "skyscreens",
@@ -13,7 +13,6 @@ let package = Package(
         .executable(name: "skyscreens-displays", targets: ["skyscreens-displays"]),
     ],
     targets: [
-        // Declarations for CoreGraphics' private CGVirtualDisplay API.
         .target(name: "CVirtualDisplay", linkerSettings: [.linkedFramework("CoreGraphics")]),
         .target(name: "CLink", linkerSettings: [.unsafeFlags(["-L\(rustLib)"]), .linkedLibrary("link")]),
         .target(
@@ -29,5 +28,6 @@ let package = Package(
         ),
         .executableTarget(name: "skyscreens-displays", dependencies: ["SkyscreensKit"]),
         .executableTarget(name: "skyscreens", dependencies: ["SkyscreensKit"]),
+        .testTarget(name: "SkyscreensKitTests", dependencies: ["SkyscreensKit"]),
     ]
 )

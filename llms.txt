@@ -1,6 +1,6 @@
 # skyscreens
 
-> Open-source app that turns a Meta Quest 3 into extra monitors for a Mac. The Mac creates virtual displays and streams them to the headset over USB-C (Wi-Fi later), where each one shows as a sharp OpenXR layer over passthrough. No account and no cloud. MIT license. Early development: Phase 1 of 5 (one screen over USB) is built and awaiting its first device test. There is nothing to install yet.
+> Open-source app that turns a Meta Quest 3 into extra monitors for a Mac. The Mac creates virtual displays and streams them to the headset over USB-C (Wi-Fi later), where each one shows as a sharp OpenXR layer over passthrough. No account and no cloud. MIT license. Early development: Phase 1 of 5 (one screen over USB) is built, and its Mac side passes an end-to-end eval. The first device test is next. There is nothing to install yet.
 
 Key facts:
 
@@ -9,6 +9,7 @@ Key facts:
 - Headset side: native Rust with OpenXR, Vulkan and MediaCodec. No game engine and no Java.
 - Protocol: the Rust `link` crate, shared by both sides. Today it runs TCP over `adb reverse` on port 7243. UDP with FEC, resend and LTR recovery is planned for Wi-Fi.
 - Targets: 25 ms or less from key press to visible text over USB, and 12 ms or less for the cursor.
+- Quality gates: `scripts/check.sh` runs formatting, strict lints, unit, property and loopback tests, and both app builds; CI runs the same script. `scripts/eval.sh mac|quest` runs the real pipeline end to end and prints a JSON report. Code carries no comments; intent lives in names, tests and docs.
 - Repository: https://github.com/adrianetti/skyscreens
 
 ## Docs

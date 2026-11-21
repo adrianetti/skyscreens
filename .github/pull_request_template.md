@@ -4,13 +4,12 @@
 
 ## How it was tested
 
-- [ ] `cargo test -p link`
-- [ ] `cargo build --release -p link && (cd mac && swift build -c release)`
-- [ ] `xr/build.sh`
-- [ ] On the device (paste the latency line from `mac/scripts/run.sh stream` if the change affects streaming)
+- [ ] `scripts/check.sh` passes
+- [ ] `scripts/eval.sh mac` passes (capture, encoding, streamer or protocol changes). Paste its JSON summary
+- [ ] `scripts/eval.sh quest` passes (headset changes), or say why it could not run
+- [ ] A new or changed test covers the behavior change
 
 ## Checklist
 
 - [ ] Wire format changes have a round-trip test, and `PROTOCOL_VERSION` is bumped if older apps can't read them
-- [ ] `crates/link/src/ffi.rs` and `mac/Sources/CLink/include/link.h` still match
-- [ ] Docs updated (README, `docs/`, `AGENTS.md`) if behavior or commands changed
+- [ ] Docs updated (README, `docs/`, `AGENTS.md`, `llms.txt`) if behavior or commands changed
