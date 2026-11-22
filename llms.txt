@@ -18,6 +18,7 @@ Key facts:
 - [Architecture](https://github.com/adrianetti/skyscreens/blob/main/docs/architecture.md): the design and the measurements behind every decision
 - [Development guide](https://github.com/adrianetti/skyscreens/blob/main/docs/development.md): toolchains, code signing, Quest setup, streaming, troubleshooting
 - [AGENTS.md](https://github.com/adrianetti/skyscreens/blob/main/AGENTS.md): code map, commands, rules and known pitfalls for coding agents
+- [Code standards](https://github.com/adrianetti/skyscreens/blob/main/docs/code-standards.md): every lint and limit, its industry source, and how it is enforced
 
 ## Optional
 

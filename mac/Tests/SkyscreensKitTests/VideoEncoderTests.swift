@@ -2,6 +2,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import Testing
+import os
 
 @testable import SkyscreensKit
 
@@ -17,7 +18,9 @@ func makeBGRABuffer(width: Int, height: Int, fill: (Int, Int) -> [UInt8]) -> CVP
     for y in 0..<height {
         for x in 0..<width {
             let pixel = fill(x, y)
-            for c in 0..<4 { base.storeBytes(of: pixel[c], toByteOffset: y * rowBytes + x * 4 + c, as: UInt8.self) }
+            for channel in 0..<4 {
+                base.storeBytes(of: pixel[channel], toByteOffset: y * rowBytes + x * 4 + channel, as: UInt8.self)
+            }
         }
     }
     return buffer
@@ -29,15 +32,14 @@ let hardwareEncoderAvailable = (try? VideoEncoder(width: 256, height: 160, fps: 
 struct VideoEncoderTests {
     func encode(frames: [(CVPixelBuffer, Bool)]) throws -> [VideoEncoder.Frame] {
         let encoder = try VideoEncoder(width: 256, height: 160, fps: 60, bitrate: 2_000_000)
-        let lock = NSLock()
-        var out: [VideoEncoder.Frame] = []
+        let collected = OSAllocatedUnfairLock(initialState: [VideoEncoder.Frame]())
         for (i, (buffer, forceKey)) in frames.enumerated() {
-            encoder.encode(buffer, pts: CMTime(value: Int64(i + 1), timescale: 60), forceKey: forceKey) { f in
-                lock.withLock { out.append(f) }
+            encoder.encode(buffer, pts: CMTime(value: Int64(i + 1), timescale: 60), forceKey: forceKey) { frame in
+                collected.withLock { $0.append(frame) }
             }
         }
         encoder.flush()
-        return lock.withLock { out }
+        return collected.withLock { $0 }
     }
 
     func frame(_ shade: UInt8) throws -> CVPixelBuffer {
@@ -56,9 +58,9 @@ struct VideoEncoderTests {
     @Test func laterFramesAreDeltasWithoutParameterSets() throws {
         let out = try encode(frames: [(try frame(10), true), (try frame(60), false), (try frame(90), false)])
         #expect(out.count == 3)
-        for f in out.dropFirst() {
-            #expect(!f.isKey)
-            #expect(!nalUnitTypes(f.annexB).contains(7))
+        for frame in out.dropFirst() {
+            #expect(!frame.isKey)
+            #expect(!nalUnitTypes(frame.annexB).contains(7))
         }
     }
 

@@ -26,7 +26,7 @@ impl Rng {
         (0..self.below(max)).map(|_| self.byte()).collect()
     }
     fn size(&mut self, max: u64) -> usize {
-        usize::try_from(self.below(max)).unwrap()
+        usize::try_from(self.below(max)).unwrap_or(usize::MAX)
     }
 }
 

@@ -1,7 +1,7 @@
 import CoreMedia
 import ScreenCaptureKit
 
-public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
+public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     public struct Frame {
         public let buffer: CVPixelBuffer
         public let dirtyRegions: [CGRect]
@@ -18,9 +18,20 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    public var onFrame: ((Frame) -> Void)?
-    public var onStop: ((Error) -> Void)?
-    private var stream: SCStream?
+    private let lock = NSLock()
+    private var frameHandler: (@Sendable (Frame) -> Void)?
+    private var stopHandler: (@Sendable (any Error) -> Void)?
+    private var activeStream: SCStream?
+
+    public var onFrame: (@Sendable (Frame) -> Void)? {
+        get { lock.withLock { frameHandler } }
+        set { lock.withLock { frameHandler = newValue } }
+    }
+
+    public var onStop: (@Sendable (any Error) -> Void)? {
+        get { lock.withLock { stopHandler } }
+        set { lock.withLock { stopHandler = newValue } }
+    }
     private let queue = DispatchQueue(label: "skyscreens.capture", qos: .userInteractive)
 
     override public init() {}
@@ -37,7 +48,7 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         )
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         try await stream.startCapture()
-        self.stream = stream
+        lock.withLock { activeStream = stream }
     }
 
     static func configuration(width: Int, height: Int, fps: Double) -> SCStreamConfiguration {
@@ -53,11 +64,14 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     public func stop() async {
+        let stream = lock.withLock { () -> SCStream? in
+            defer { activeStream = nil }
+            return activeStream
+        }
         try? await stream?.stopCapture()
-        stream = nil
     }
 
-    public func stream(_ stream: SCStream, didOutputSampleBuffer sample: CMSampleBuffer, of type: SCStreamOutputType) {
+    public func stream(_: SCStream, didOutputSampleBuffer sample: CMSampleBuffer, of type: SCStreamOutputType) {
         let arrival = CACurrentMediaTime()
         guard type == .screen,
             let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false)
@@ -66,11 +80,11 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             let status = info[.status] as? Int, SCFrameStatus(rawValue: status) == .complete,
             let buffer = sample.imageBuffer
         else { return }
-        let dirty = (info[.dirtyRects] as? [NSDictionary])?.compactMap {
-            CGRect(dictionaryRepresentation: $0 as CFDictionary)
+        let dirty = (info[.dirtyRects] as? [[String: Any]])?.compactMap { rect in
+            CGRect(dictionaryRepresentation: rect as CFDictionary)
         }
         onFrame?(Frame(buffer: buffer, dirtyRegions: dirty ?? [], arrivalTime: arrival))
     }
 
-    public func stream(_ stream: SCStream, didStopWithError error: Error) { onStop?(error) }
+    public func stream(_: SCStream, didStopWithError error: any Error) { onStop?(error) }
 }

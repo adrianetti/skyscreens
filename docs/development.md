@@ -36,10 +36,10 @@ rustup toolchain install
 
 Add the `export` line to `~/.zshrc` too. `rustup toolchain install` reads `rust-toolchain.toml` and installs the pinned Rust version, with rustfmt, clippy and the Android target.
 
-**Check tools.** `scripts/check.sh` needs these:
+**Check tools.** `scripts/check.sh` needs these. Ruff, mypy and zizmor run through `uvx` at pinned versions, so they need no separate install:
 
 ```sh
-brew install cbindgen cargo-deny shellcheck actionlint uv
+brew install cbindgen cargo-deny cargo-llvm-cov cargo-shear swiftlint shellcheck shfmt actionlint typos-cli uv
 ```
 
 **Android SDK, NDK and JDK** for the headset app. The headset app has no Java code and needs no Gradle, only these packages:
@@ -58,19 +58,19 @@ Use the `android` tool as shown. `sdkmanager` from the same folder can finish wi
 
 ## Checks, tests and evals
 
-One script runs every check, and CI runs the same script:
+One script runs every check, and CI runs the same script. The rules behind each check are listed in [code-standards.md](code-standards.md).
 
 ```sh
 scripts/check.sh          # everything; must pass before a change is done
-scripts/check.sh fast     # formatting, lints and Rust tests, in about 20 seconds
+scripts/check.sh fast     # formatting, lints and Rust tests
 scripts/check.sh fix      # apply the formatters and regenerate mac/Sources/CLink/include/link.h
 ```
 
 | Stage | What it checks |
 |---|---|
-| `scripts` | No comments in code, script tests, ruff, shellcheck, actionlint |
-| `rust` | rustfmt, clippy (pedantic, warnings are errors), unit, property and loopback tests, `link.h` drift, `cargo deny` |
-| `swift` | `swift format` (strict), build with warnings as errors, Swift Testing suites, bench typecheck |
+| `scripts` | File limits and whitespace, no comments, spelling (typos), script tests, ruff, mypy, shfmt, ShellCheck, actionlint, zizmor |
+| `rust` | rustfmt, clippy (pedantic plus restriction lints, warnings are errors), unit, property and loopback tests with at least 85% line coverage, `link.h` drift, `cargo deny`, `cargo shear` |
+| `swift` | `swift format` and SwiftLint (strict), Swift 6 build with warnings as errors, Swift Testing suites, bench typecheck |
 | `android` | clippy for `aarch64-linux-android`, then the APK |
 
 Enable the git hooks once. Then `pre-commit` runs `scripts/check.sh fast`, and `commit-msg` checks the Conventional Commits format:

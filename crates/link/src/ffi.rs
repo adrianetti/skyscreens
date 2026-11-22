@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "C ABI for the Mac app: raw pointers and exported symbols")]
+
 use crate::message::{Role, Screen};
 use crate::sender::Priority;
 use crate::server::{Event, Server};
@@ -15,13 +17,13 @@ pub const SK_PRIORITY_BACKGROUND: u8 = 4;
 pub const SK_PRIORITY_REFINE: u8 = 5;
 
 const _: () = {
-    assert!(SK_DEFAULT_PORT == crate::DEFAULT_PORT);
-    assert!(SK_PRIORITY_CONTROL == Priority::Control as u8);
-    assert!(SK_PRIORITY_CURSOR == Priority::Cursor as u8);
-    assert!(SK_PRIORITY_FOCUSED == Priority::Focused as u8);
-    assert!(SK_PRIORITY_VIDEO == Priority::Video as u8);
-    assert!(SK_PRIORITY_BACKGROUND == Priority::Background as u8);
-    assert!(SK_PRIORITY_REFINE == Priority::Refine as u8);
+    assert!(SK_DEFAULT_PORT == crate::DEFAULT_PORT, "SK_DEFAULT_PORT must match the Rust value");
+    assert!(SK_PRIORITY_CONTROL == Priority::Control as u8, "SK_PRIORITY_CONTROL must match the Rust value");
+    assert!(SK_PRIORITY_CURSOR == Priority::Cursor as u8, "SK_PRIORITY_CURSOR must match the Rust value");
+    assert!(SK_PRIORITY_FOCUSED == Priority::Focused as u8, "SK_PRIORITY_FOCUSED must match the Rust value");
+    assert!(SK_PRIORITY_VIDEO == Priority::Video as u8, "SK_PRIORITY_VIDEO must match the Rust value");
+    assert!(SK_PRIORITY_BACKGROUND == Priority::Background as u8, "SK_PRIORITY_BACKGROUND must match the Rust value");
+    assert!(SK_PRIORITY_REFINE == Priority::Refine as u8, "SK_PRIORITY_REFINE must match the Rust value");
 };
 
 #[derive(Debug)]
@@ -71,8 +73,10 @@ pub unsafe extern "C" fn sk_set_screens(
 ) -> bool {
     let Some(server) = (unsafe { handle(server) }) else { return false };
     let n = usize::from(count);
-    let (ids, roles, widths, heights) =
-        unsafe { (slice(ids, n), slice(roles, n), slice(widths, n), slice(heights, n)) };
+    let ids = unsafe { slice(ids, n) };
+    let roles = unsafe { slice(roles, n) };
+    let widths = unsafe { slice(widths, n) };
+    let heights = unsafe { slice(heights, n) };
     let screens = (0..n)
         .map(|i| Screen { id: ids[i], role: Role::from(roles[i]), width: widths[i], height: heights[i] })
         .collect();
@@ -161,24 +165,21 @@ mod tests {
     #[test]
     fn null_handles_are_rejected_without_crashing() {
         let null = std::ptr::null();
-        unsafe {
-            assert!(!sk_server_connected(null));
-            assert!(!sk_set_screens(null, 0, std::ptr::null(), std::ptr::null(), std::ptr::null(), std::ptr::null()));
-            assert!(!sk_send_video(null, 0, true, 0, std::ptr::null(), 0, SK_PRIORITY_FOCUSED));
-            assert!(!sk_send_tile(null, 0, 0, 0, 1, 1, std::ptr::null(), 0, SK_PRIORITY_REFINE));
-            assert!(!sk_send_cursor(null, 0, 0.0, 0.0, 0));
-            sk_server_on_message(null, record, std::ptr::null_mut());
-        }
+        let none = std::ptr::null();
+        assert!(!unsafe { sk_server_connected(null) }, "connected");
+        assert!(!unsafe { sk_set_screens(null, 0, none, none, std::ptr::null(), std::ptr::null()) }, "screens");
+        assert!(!unsafe { sk_send_video(null, 0, true, 0, none, 0, SK_PRIORITY_FOCUSED) }, "video");
+        assert!(!unsafe { sk_send_tile(null, 0, 0, 0, 1, 1, none, 0, SK_PRIORITY_REFINE) }, "tile");
+        assert!(!unsafe { sk_send_cursor(null, 0, 0.0, 0.0, 0) }, "cursor");
+        unsafe { sk_server_on_message(null, record, std::ptr::null_mut()) };
     }
 
     #[test]
     fn the_c_interface_streams_to_a_headset_and_reports_pongs() {
         let (server, addr) = handle_for_tests();
         let (ids, roles, widths, heights) = ([0u8], [0u8], [1616u16], [1008u16]);
-        unsafe {
-            sk_server_on_message(server, record, std::ptr::null_mut());
-            sk_set_screens(server, 1, ids.as_ptr(), roles.as_ptr(), widths.as_ptr(), heights.as_ptr());
-        }
+        unsafe { sk_server_on_message(server, record, std::ptr::null_mut()) };
+        unsafe { sk_set_screens(server, 1, ids.as_ptr(), roles.as_ptr(), widths.as_ptr(), heights.as_ptr()) };
         let mut headset = TcpStream::connect(addr).unwrap();
         assert!(eventually(|| unsafe { sk_server_connected(server) }));
         let frame = [0u8, 0, 0, 1, 0x65, 7];

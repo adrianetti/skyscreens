@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used, reason = "test helpers: a failed setup should fail the test")]
+
 use fake_headset::{Config, Headset, run};
 use link::{Event, Message, Priority, Role, Screen, Server, annexb::START_CODE};
 use std::net::TcpListener;
@@ -103,11 +105,11 @@ fn mac_that_answers_keyframe_requests(first_frame: Vec<u8>, first_is_key: bool) 
     s.set_screens(vec![code_screen()]);
     let weak = Arc::downgrade(&s);
     s.on_event(move |e| {
-        if let (Event::KeyframeRequest { screen }, Some(s)) = (e, weak.upgrade()) {
-            s.send_video(screen, true, 2, keyframe(3), Priority::Focused);
+        if let (Event::KeyframeRequest { screen }, Some(mac)) = (e, weak.upgrade()) {
+            mac.send_video(screen, true, 2, keyframe(3), Priority::Focused);
         }
     });
-    let sending = s.clone();
+    let sending = Arc::clone(&s);
     thread::spawn(move || {
         if wait_until(|| sending.is_connected()) {
             sending.send_video(0, first_is_key, 1, first_frame, Priority::Focused);

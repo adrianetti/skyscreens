@@ -2,7 +2,7 @@ use openxr as xr;
 
 #[derive(Debug, Clone, Copy)]
 #[expect(clippy::struct_excessive_bools, reason = "one flag per optional OpenXR extension")]
-pub struct Platform {
+pub(crate) struct Platform {
     pub passthrough: bool,
     pub cylinder: bool,
     pub layer_settings: bool,
@@ -12,8 +12,8 @@ pub struct Platform {
 }
 
 impl Platform {
-    pub fn detect(available: &xr::ExtensionSet) -> Platform {
-        Platform {
+    pub(crate) fn detect(available: &xr::ExtensionSet) -> Self {
+        Self {
             passthrough: available.fb_passthrough,
             cylinder: available.khr_composition_layer_cylinder,
             layer_settings: available.fb_composition_layer_settings,
@@ -23,7 +23,7 @@ impl Platform {
         }
     }
 
-    pub fn enable(self, e: &mut xr::ExtensionSet) {
+    pub(crate) fn enable(self, e: &mut xr::ExtensionSet) {
         e.fb_passthrough = self.passthrough;
         e.khr_composition_layer_cylinder = self.cylinder;
         e.fb_composition_layer_settings = self.layer_settings;

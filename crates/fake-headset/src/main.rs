@@ -28,7 +28,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Config, String> {
         request_keyframe: true,
     };
     while let Some(flag) = args.next() {
-        let mut value = || args.next().ok_or(format!("{flag} needs a value"));
+        let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
         match flag.as_str() {
             "--port" => config.addr.set_port(value()?.parse().map_err(|e| format!("--port: {e}"))?),
             "--seconds" => config.duration = seconds(&value()?)?,
@@ -41,5 +41,8 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Config, String> {
 }
 
 fn seconds(v: &str) -> Result<Duration, String> {
-    v.parse::<f64>().ok().and_then(|s| Duration::try_from_secs_f64(s).ok()).ok_or(format!("not a duration: {v}"))
+    v.parse::<f64>()
+        .ok()
+        .and_then(|s| Duration::try_from_secs_f64(s).ok())
+        .ok_or_else(|| format!("not a duration: {v}"))
 }

@@ -4,8 +4,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
-RUFF_VERSION=0.17.6
+RUFF=ruff@0.17.6
+MYPY=mypy@1.18.2
+ZIZMOR=zizmor@1.33.0
+MIN_COVERAGE=85
 SWIFT_SOURCES=(mac/Package.swift mac/Sources mac/Tests bench)
+SHELL_SCRIPTS=(scripts/*.sh scripts/hooks/* mac/scripts/*.sh xr/build.sh)
 HEADER=mac/Sources/CLink/include/link.h
 
 usage() {
@@ -13,79 +17,76 @@ usage() {
 usage: scripts/check.sh [all | fast | rust | android | swift | scripts | fix]
   all      every check; what CI runs, and the bar for calling a change done
   fast     formatting, lints and Rust tests; the pre-commit hook
-  rust     format, clippy, tests, C header drift, dependency policy
+  rust     format, clippy, tests, coverage, C header drift, dependency policy
   android  clippy for the headset target, then the APK build
-  swift    format, warnings-as-errors build, tests, bench typecheck
-  scripts  no-comment rule, Python, shell and workflow linters
+  swift    format, SwiftLint, Swift 6 build with warnings as errors, tests, bench typecheck
+  scripts  limits, no comments, spelling, Python, shell and workflow linters
   fix      apply every formatter and regenerate the C header
 USAGE
   exit 2
 }
 
-step() { printf '\n==> %s\n' "$*"; }
+run() {
+  printf '\n==> %s\n' "$1"
+  shift
+  "$@"
+}
 fail() {
   echo "check: $*" >&2
   exit 1
 }
-need() { command -v "$1" > /dev/null || fail "missing $1. $2"; }
-
-ruff() {
-  if command -v uvx > /dev/null; then
-    uvx -q "ruff@$RUFF_VERSION" "$@"
-  else
-    need ruff "Install uv (brew install uv) or ruff $RUFF_VERSION."
-    command ruff "$@"
-  fi
+need() {
+  local tool
+  for tool in "$@"; do
+    command -v "$tool" > /dev/null || fail "missing $tool. Install it: docs/development.md#install-the-toolchains"
+  done
 }
-
+uvtool() { uvx -q "$@"; }
 header() {
-  need cbindgen "brew install cbindgen"
   cbindgen --quiet --config crates/link/cbindgen.toml crates/link/src/ffi.rs
 }
 
 check_scripts() {
-  step "code has no comments"
-  python3 scripts/comments.py
-  step "script tests"
-  python3 -m unittest discover -s scripts -p 'test_*.py' -q
-  step "python format"
-  ruff format --check --quiet .
-  step "python lint"
-  ruff check --quiet .
-  step "shellcheck"
-  need shellcheck "brew install shellcheck"
-  git ls-files -co --exclude-standard '*.sh' 'scripts/hooks/*' | xargs shellcheck
-  step "workflows"
-  need actionlint "brew install actionlint"
-  actionlint
+  need uvx typos shfmt shellcheck actionlint
+  run "file limits and whitespace" python3 scripts/limits.py
+  run "code has no comments" python3 scripts/comments.py
+  run "spelling" typos
+  run "script tests" python3 -m unittest discover -s scripts -p 'test_*.py' -q
+  run "python format" uvtool "$RUFF" format --check --quiet .
+  run "python lint" uvtool "$RUFF" check --quiet .
+  run "python types" uvtool "$MYPY"
+  run "shell format" shfmt -d "${SHELL_SCRIPTS[@]}"
+  run "shellcheck" shellcheck "${SHELL_SCRIPTS[@]}"
+  run "workflows" actionlint
+  run "workflow security" uvtool "$ZIZMOR" --quiet .github/workflows
 }
 
-check_rust_format_and_lint() {
-  step "rust format"
-  cargo fmt --all --check
-  step "rust clippy"
-  cargo clippy --workspace --all-targets --locked -- -D warnings
+check_rust_lint() {
+  run "rust format" cargo fmt --all --check
+  run "rust clippy" cargo clippy --workspace --all-targets --locked -- -D warnings
 }
 
-check_rust() {
-  check_rust_format_and_lint
-  step "rust tests"
-  cargo test --workspace --locked
-  step "C header matches crates/link/src/ffi.rs"
+header_is_current() {
   local generated
   generated="$(header)"
   diff -u "$HEADER" <(printf '%s\n' "$generated") || fail "link.h is stale; run scripts/check.sh fix"
-  step "dependency policy"
-  need cargo-deny "brew install cargo-deny"
-  cargo deny --log-level error check
+}
+
+check_rust() {
+  need cargo-llvm-cov cargo-deny cargo-shear cbindgen
+  check_rust_lint
+  run "rust tests, at least ${MIN_COVERAGE}% line coverage" \
+    cargo llvm-cov --workspace --exclude xr --locked --fail-under-lines "$MIN_COVERAGE" --summary-only
+  run "headset logic tests" cargo test -p xr --locked
+  run "C header matches crates/link/src/ffi.rs" header_is_current
+  run "dependency policy" cargo deny --log-level error check
+  run "unused dependencies" cargo shear
 }
 
 check_android() {
   source scripts/android-env.sh
-  step "headset clippy"
-  cargo clippy -p xr --target aarch64-linux-android --all-targets --locked -- -D warnings
-  step "headset apk"
-  xr/build.sh
+  run "headset clippy" cargo clippy -p xr --target aarch64-linux-android --all-targets --locked -- -D warnings
+  run "headset apk" xr/build.sh
 }
 
 typecheck_bench() {
@@ -99,29 +100,26 @@ typecheck_bench() {
   done
 }
 
-check_swift_format() {
-  step "swift format"
-  swift format lint --strict --recursive --parallel "${SWIFT_SOURCES[@]}"
+check_swift_style() {
+  need swift swiftlint
+  run "swift format" swift format lint --strict --recursive --parallel "${SWIFT_SOURCES[@]}"
+  run "swiftlint" swiftlint lint --quiet --strict
 }
 
 check_swift() {
-  need swift "Install Xcode."
-  check_swift_format
-  step "link static library"
-  cargo build --release -p link --locked
-  step "swift build, warnings are errors"
-  (cd mac && swift build --build-tests -Xswiftc -warnings-as-errors)
-  step "swift tests"
-  (cd mac && swift test --skip-build)
-  step "bench scripts typecheck"
-  typecheck_bench
+  check_swift_style
+  run "link static library" cargo build --release -p link --locked
+  run "swift 6 build, warnings are errors" swift build --package-path mac --build-tests -Xswiftc -warnings-as-errors
+  run "swift tests" swift test --package-path mac --skip-build
+  run "bench scripts typecheck" typecheck_bench
 }
 
 fix() {
   cargo fmt --all
   swift format --in-place --recursive --parallel "${SWIFT_SOURCES[@]}"
-  ruff format --quiet .
-  ruff check --fix --exit-zero --quiet .
+  uvtool "$RUFF" format --quiet .
+  uvtool "$RUFF" check --fix --exit-zero --quiet .
+  shfmt -w "${SHELL_SCRIPTS[@]}"
   header > "$HEADER"
 }
 
@@ -135,15 +133,11 @@ case "$target" in
     ;;
   fast)
     check_scripts
-    check_rust_format_and_lint
-    check_swift_format
-    step "rust tests"
-    cargo test --workspace --locked
+    check_rust_lint
+    check_swift_style
+    run "rust tests" cargo test --workspace --locked
     ;;
-  rust) check_rust ;;
-  android) check_android ;;
-  swift) check_swift ;;
-  scripts) check_scripts ;;
+  rust | android | swift | scripts) "check_$target" ;;
   fix) fix ;;
   *) usage ;;
 esac

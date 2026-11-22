@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "OpenXR session, JNI and Android surface handles are raw pointers")]
+
 use crate::layout::{DISTANCE_M, TEST_SCREEN_H, TEST_SCREEN_W, quad_size_m};
 use crate::runtime::{Runtime, Vulkan};
 use crate::{Result, android, gpu::Uploader, net, pattern::test_pattern};
@@ -12,7 +14,7 @@ use std::time::Duration;
 const REFRESH_RATE_HZ: f32 = 90.0;
 const IDLE_SLEEP: Duration = Duration::from_millis(50);
 
-pub fn run(app: &AndroidApp) -> Result<()> {
+pub(crate) fn run(app: &AndroidApp) -> Result<()> {
     android::use_activity_as_context(app);
     let runtime = Runtime::create()?;
     let vulkan = runtime.create_vulkan()?;
@@ -34,11 +36,11 @@ struct XrSession {
 }
 
 impl XrSession {
-    fn create(runtime: &Runtime, vulkan: &Vulkan) -> Result<XrSession> {
+    fn create(runtime: &Runtime, vulkan: &Vulkan) -> Result<Self> {
         let info = xr::vulkan::SessionCreateInfo {
-            instance: vulkan.instance.handle().as_raw() as _,
-            physical_device: vulkan.physical_device.as_raw() as _,
-            device: vulkan.device.handle().as_raw() as _,
+            instance: vulkan.instance.handle().as_raw() as *const std::ffi::c_void,
+            physical_device: vulkan.physical_device.as_raw() as *const std::ffi::c_void,
+            device: vulkan.device.handle().as_raw() as *const std::ffi::c_void,
             queue_family_index: vulkan.queue_family,
             queue_index: 0,
         };
@@ -53,7 +55,7 @@ impl XrSession {
         } else {
             None
         };
-        Ok(XrSession { passthrough, space, frame_stream, frame_wait, session })
+        Ok(Self { passthrough, space, frame_stream, frame_wait, session })
     }
 }
 
@@ -63,7 +65,7 @@ struct TestScreen {
 }
 
 impl TestScreen {
-    fn create(session: &xr::Session<xr::Vulkan>, vulkan: &Vulkan) -> Result<TestScreen> {
+    fn create(session: &xr::Session<xr::Vulkan>, vulkan: &Vulkan) -> Result<Self> {
         let formats = session.enumerate_swapchain_formats()?;
         let bgra = formats.contains(&format_code(vk::Format::B8G8R8A8_SRGB)?);
         let format = if bgra { vk::Format::B8G8R8A8_SRGB } else { vk::Format::R8G8B8A8_SRGB };
@@ -96,7 +98,7 @@ impl TestScreen {
             uploader.upload(images[i], vk::ImageLayout::UNDEFINED, full, &pixels)?;
             swapchain.release_image()?;
         }
-        Ok(TestScreen { swapchain, _uploader: uploader })
+        Ok(Self { swapchain, _uploader: uploader })
     }
 }
 
@@ -112,13 +114,13 @@ struct VideoLayer {
 }
 
 impl VideoLayer {
-    fn start(app: &AndroidApp) -> Result<VideoLayer> {
+    fn start(app: &AndroidApp) -> Result<Self> {
         let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast())? };
         vm.attach_current_thread_permanently()?;
         let shared = Arc::new(net::Shared::default());
         let (screens_tx, screens) = mpsc::channel();
-        net::spawn(shared.clone(), screens_tx)?;
-        Ok(VideoLayer { vm, shared, screens, current: None })
+        net::spawn(Arc::clone(&shared), screens_tx)?;
+        Ok(Self { vm, shared, screens, current: None })
     }
 
     fn apply_screen_updates(&mut self, instance: &xr::Instance, session: &xr::Session<xr::Vulkan>) -> Result<()> {
@@ -168,6 +170,10 @@ impl FrameLoop<'_> {
 
     fn handle_xr_events(&mut self, events: &mut xr::EventDataBuffer) -> Result<bool> {
         while let Some(event) = self.runtime.instance.poll_event(events)? {
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "the frame loop reacts to two of the runtime's many events"
+            )]
             match event {
                 xr::Event::SessionStateChanged(change) => {
                     let state = change.state();
@@ -234,9 +240,9 @@ impl FrameLoop<'_> {
             space: xr::sys::Space::NULL,
             layer_handle: *layer.inner(),
         });
-        let mut layers: Vec<&xr::CompositionLayerBase<xr::Vulkan>> = Vec::with_capacity(2);
+        let mut layers: Vec<&xr::CompositionLayerBase<'_, xr::Vulkan>> = Vec::with_capacity(2);
         if let Some(u) = &underlay {
-            layers.push(unsafe { &*std::ptr::from_ref(u).cast::<xr::CompositionLayerBase<xr::Vulkan>>() });
+            layers.push(unsafe { &*std::ptr::from_ref(u).cast::<xr::CompositionLayerBase<'_, xr::Vulkan>>() });
         }
         layers.push(&quad);
         self.xr.frame_stream.end(state.predicted_display_time, xr::EnvironmentBlendMode::OPAQUE, &layers)?;

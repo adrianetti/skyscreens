@@ -4,9 +4,9 @@ import json
 import math
 import random
 import sys
+from pathlib import Path
 
-with open(sys.argv[1] if len(sys.argv) > 1 else "params.json") as params_file:
-    P = json.load(params_file)
+P = json.loads(Path(sys.argv[1] if len(sys.argv) > 1 else "params.json").read_text())
 PKT = 1200
 DUR = 60.0
 SEEDS = 4
@@ -15,27 +15,81 @@ DISPLAY_MS = (1000 / 90) / 2 + 3
 CAPTURE_MS = (1000 / 60) / 2 + 2
 
 LINKS = {
-    "USB-C cable": dict(bw=250, base=0.7, jit=0.1, loss=0.0, burst=(0, 0, 0), spikes=0.0, spike=(0, 0)),
-    "Wi-Fi router": dict(bw=350, base=2.5, jit=0.8, loss=0.002, burst=(0.0005, 0.7, 0.3), spikes=0.05, spike=(15, 40)),
-    "S23 hotspot": dict(bw=180, base=4.0, jit=1.5, loss=0.003, burst=(0.001, 0.8, 0.4), spikes=0.1, spike=(15, 50)),
-    "hotspot, bad day": dict(
-        bw=120, base=5.0, jit=3.0, loss=0.01, burst=(0.003, 0.85, 0.5), spikes=1.0, spike=(20, 80)
-    ),
+    "USB-C cable": {
+        "bw": 250,
+        "base": 0.7,
+        "jit": 0.1,
+        "loss": 0.0,
+        "burst": (0, 0, 0),
+        "spikes": 0.0,
+        "spike": (0, 0),
+    },
+    "Wi-Fi router": {
+        "bw": 350,
+        "base": 2.5,
+        "jit": 0.8,
+        "loss": 0.002,
+        "burst": (0.0005, 0.7, 0.3),
+        "spikes": 0.05,
+        "spike": (15, 40),
+    },
+    "S23 hotspot": {
+        "bw": 180,
+        "base": 4.0,
+        "jit": 1.5,
+        "loss": 0.003,
+        "burst": (0.001, 0.8, 0.4),
+        "spikes": 0.1,
+        "spike": (15, 50),
+    },
+    "hotspot, bad day": {
+        "bw": 120,
+        "base": 5.0,
+        "jit": 3.0,
+        "loss": 0.01,
+        "burst": (0.003, 0.85, 0.5),
+        "spikes": 1.0,
+        "spike": (20, 80),
+    },
 }
 
 STRATS = {
-    "A: one TCP stream, all video": dict(
-        tcp=True, fec=0, nack=False, ltr=False, prio=False, hybrid=False, local_cursor=False
-    ),
-    "B: UDP, keyframe on loss (ALVR-style)": dict(
-        tcp=False, fec=0, nack=False, ltr=False, prio=False, hybrid=False, local_cursor=False
-    ),
-    "C: UDP + FEC + resend + LTR recovery": dict(
-        tcp=False, fec=0.1, nack=True, ltr=True, prio=False, hybrid=False, local_cursor=False
-    ),
-    "D: C + lossless text lane + priority + cursor": dict(
-        tcp=False, fec=0.1, nack=True, ltr=True, prio=True, hybrid=True, local_cursor=True
-    ),
+    "A: one TCP stream, all video": {
+        "tcp": True,
+        "fec": 0,
+        "nack": False,
+        "ltr": False,
+        "prio": False,
+        "hybrid": False,
+        "local_cursor": False,
+    },
+    "B: UDP, keyframe on loss (ALVR-style)": {
+        "tcp": False,
+        "fec": 0,
+        "nack": False,
+        "ltr": False,
+        "prio": False,
+        "hybrid": False,
+        "local_cursor": False,
+    },
+    "C: UDP + FEC + resend + LTR recovery": {
+        "tcp": False,
+        "fec": 0.1,
+        "nack": True,
+        "ltr": True,
+        "prio": False,
+        "hybrid": False,
+        "local_cursor": False,
+    },
+    "D: C + lossless text lane + priority + cursor": {
+        "tcp": False,
+        "fec": 0.1,
+        "nack": True,
+        "ltr": True,
+        "prio": True,
+        "hybrid": True,
+        "local_cursor": True,
+    },
 }
 
 
@@ -54,8 +108,7 @@ def workload(rng):
     t = 1.0
     while t < DUR:
         if rng.random() < 0.25:
-            for i in range(int(rng.uniform(0.6, 2.0) * FPS)):
-                ev.append((t + i / FPS, 1, "scroll"))
+            ev.extend((t + i / FPS, 1, "scroll") for i in range(int(rng.uniform(0.6, 2.0) * FPS)))
             t += 2.5
         else:
             end = t + rng.uniform(2, 8)
@@ -66,8 +119,7 @@ def workload(rng):
     for s, gap in ((2, 8), (3, 25)):
         t = rng.uniform(1, gap)
         while t < DUR:
-            for i in range(rng.randint(2, 12)):
-                ev.append((t + i / FPS, s, "typing" if rng.random() < 0.7 else "scroll"))
+            ev.extend((t + i / FPS, s, "typing" if rng.random() < 0.7 else "scroll") for i in range(rng.randint(2, 12)))
             t += rng.expovariate(1 / gap)
     ev += [(30.0 + s * 0.001, s, "key") for s in range(4)]
     return sorted(e for e in ev if e[0] < DUR)
@@ -97,8 +149,8 @@ class Link:
         return arr, lost
 
 
-def run(link_name, strat_name, seed):
-    link_params, strategy = LINKS[link_name], STRATS[strat_name]
+def run(link_name, strategy_name, seed):
+    link_params, strategy = LINKS[link_name], STRATS[strategy_name]
     rng = random.Random(seed)
     link = Link(link_params, random.Random(seed + 1000))
     rtt = 2 * link_params["base"] / 1000
@@ -117,25 +169,25 @@ def run(link_name, strat_name, seed):
         dec = P["lossless_dec_ms"] if lossless else P["decode_ms"]
         n = max(1, math.ceil(size / PKT))
         par = math.ceil(n * strategy["fec"]) if strategy["fec"] else 0
-        f = dict(
-            id=len(frames),
-            t=t,
-            screen=s,
-            kind=kind,
-            lane=lane,
-            n=n,
-            par=par,
-            sent=0,
-            lost=0,
-            done=None,
-            arrivals=[],
-            dec=dec,
-            prio=prio_class,
-            refine=prio_class == 9,
-        )
+        f = {
+            "id": len(frames),
+            "t": t,
+            "screen": s,
+            "kind": kind,
+            "lane": lane,
+            "n": n,
+            "par": par,
+            "sent": 0,
+            "lost": 0,
+            "done": None,
+            "arrivals": [],
+            "dec": dec,
+            "prio": prio_class,
+            "refine": prio_class == 9,
+        }
         frames.append(f)
         for _ in range(n + par):
-            push(t + enc, dict(frame=f["id"], screen=s, retx=False, size=PKT))
+            push(t + enc, {"frame": f["id"], "screen": s, "retx": False, "size": PKT})
 
     for t, s, kind in workload(rng):
         lane = "lossless" if strategy["hybrid"] and kind == "typing" else "video"
@@ -147,7 +199,7 @@ def run(link_name, strat_name, seed):
         while t < DUR:
             t += 1 / 120
             if (t % 4) < 2:
-                push(t, dict(frame=None, screen="cursor", retx=False, size=40, t0=t))
+                push(t, {"frame": None, "screen": "cursor", "retx": False, "size": 40, "t0": t})
 
     ready, now, cursor_lat, sent_bytes, delivered = [], 0.0, [], 0, []
     while pending or ready:
@@ -198,7 +250,7 @@ def run(link_name, strat_name, seed):
                 f["need"] = missing
                 at = max(f["arrivals"] or [now]) + 0.001 + link_params["base"] / 1000
                 for _ in range(missing):
-                    push(at, dict(frame=f["id"], screen=f["screen"], retx=True, size=PKT))
+                    push(at, {"frame": f["id"], "screen": f["screen"], "retx": True, "size": PKT})
             else:
                 f["broken"] = True
 

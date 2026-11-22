@@ -9,19 +9,19 @@ enum Adb {
             "/opt/homebrew/bin/adb",
             "/usr/local/bin/adb",
         ]
-        return candidates.compactMap { $0 }.first { FileManager.default.isExecutableFile(atPath: $0) }
+        return candidates.compactMap(\.self).first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     @discardableResult
     static func run(_ args: [String]) -> Bool {
         guard let path else { return false }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return false }
-        p.waitUntilExit()
-        return p.terminationStatus == 0
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = args
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 }

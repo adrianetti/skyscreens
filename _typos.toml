@@ -1,0 +1,5 @@
+[files]
+extend-exclude = ["*.jpg", "*.png", "*.svg", "Cargo.lock", "target/", "mac/.build/"]
+
+[default.extend-identifiers]
+CPY = "CPY"

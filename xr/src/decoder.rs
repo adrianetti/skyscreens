@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "AMediaCodec is thread-safe, but the ndk wrapper does not say so")]
+
 use crate::Result;
 use link::annexb;
 use ndk::media::media_codec::{
@@ -21,20 +23,20 @@ struct ThreadSafeCodec(MediaCodec);
 unsafe impl Send for ThreadSafeCodec {}
 unsafe impl Sync for ThreadSafeCodec {}
 
-pub struct Decoder {
+pub(crate) struct Decoder {
     codec: Arc<ThreadSafeCodec>,
     stop: Arc<AtomicBool>,
     output: Option<JoinHandle<()>>,
 }
 
 impl Decoder {
-    pub fn new(
+    pub(crate) fn new(
         window: &NativeWindow,
         width: i32,
         height: i32,
         keyframe: &[u8],
         on_frame: impl Fn(u64) + Send + 'static,
-    ) -> Result<Decoder> {
+    ) -> Result<Self> {
         let (sps, pps) = annexb::parameter_sets(keyframe).ok_or("keyframe without SPS and PPS")?;
         let codec = MediaCodec::from_decoder_type(MIME_H264).ok_or("no H.264 decoder")?;
         let mut format = MediaFormat::new();
@@ -52,15 +54,15 @@ impl Decoder {
         let codec = Arc::new(ThreadSafeCodec(codec));
         let stop = Arc::new(AtomicBool::new(false));
         let output = {
-            let (codec, stop) = (codec.clone(), stop.clone());
+            let (codec, stop) = (Arc::clone(&codec), Arc::clone(&stop));
             std::thread::Builder::new()
                 .name("decode-out".into())
                 .spawn(move || release_frames_until_stopped(&codec, &stop, on_frame))?
         };
-        Ok(Decoder { codec, stop, output: Some(output) })
+        Ok(Self { codec, stop, output: Some(output) })
     }
 
-    pub fn feed(&self, data: &[u8], pts_us: u64) -> Result<bool> {
+    pub(crate) fn feed(&self, data: &[u8], pts_us: u64) -> Result<bool> {
         match self.codec.0.dequeue_input_buffer(INPUT_WAIT)? {
             DequeuedInputBufferResult::Buffer(mut b) => {
                 let dst = b.buffer_mut();

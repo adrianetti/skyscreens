@@ -141,6 +141,26 @@ def c_like_comments(text: str, suffix: str) -> list[Comment]:
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 
 
+def shell_comment_start(line: str) -> int | None:
+    quote: str | None = None
+    k = 0
+    while k < len(line):
+        c = line[k]
+        if quote:
+            if c == "\\" and quote == '"':
+                k += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            k += 1
+        elif c == "#" and (k == 0 or line[k - 1] in " \t;(|&") and not line.startswith("#!", k):
+            return k
+        k += 1
+    return None
+
+
 def shell_comments(text: str) -> list[Comment]:
     out: list[Comment] = []
     offset = 0
@@ -152,24 +172,10 @@ def shell_comments(text: str) -> list[Comment]:
                 heredoc_end = None
             offset += len(line)
             continue
-        quote: str | None = None
-        k = 0
-        while k < len(line):
-            c = line[k]
-            if quote:
-                if c == "\\" and quote == '"':
-                    k += 1
-                elif c == quote:
-                    quote = None
-            elif c in "'\"":
-                quote = c
-            elif c == "\\":
-                k += 1
-            elif c == "#" and (k == 0 or line[k - 1] in " \t;(|&") and not line.startswith("#!", k):
-                end = len(line.rstrip("\n"))
-                out.append(Comment(offset + k, offset + end, line_of(text, offset + k)))
-                break
-            k += 1
+        start = shell_comment_start(line)
+        if start is not None:
+            end = len(line.rstrip("\n"))
+            out.append(Comment(offset + start, offset + end, line_of(text, offset + start)))
         if m := HEREDOC.search(line):
             heredoc_end = m.group(2)
         offset += len(line)

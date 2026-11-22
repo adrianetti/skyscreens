@@ -12,7 +12,7 @@ skyscreens gives a Mac extra monitors inside a Meta Quest 3. A Mac helper create
 |---|---|---|
 | `mac/Sources/skyscreens/main.swift` | Swift | CLI entry: `on`, `off`, `status`, `probe [hz]`, `stream [--seconds N] [--no-headset] [--test-pattern]`, `permission` |
 | `mac/Sources/skyscreens-displays/main.swift` | Swift | Helper process that owns the virtual displays (`--ppd`, `--hz`, `--count`) |
-| `mac/Sources/SkyscreensKit/` | Swift | `Session` (helper lifecycle), `VirtualDisplays`, `Layout`, `ScreenCapture`, `VideoEncoder`, `LosslessTile`, `Probe`, `Streamer`, `StreamOptions`, `StreamStats`, `MovingBar`, `Adb` |
+| `mac/Sources/SkyscreensKit/` | Swift | `Session` (helper lifecycle), `VirtualDisplaySet`, `Layout`, `ScreenCapture`, `VideoEncoder`, `LosslessTile`, `Streamer` (main actor) with `FramePipeline` (capture → encode → send, off the main thread), `LinkServer`, `ConnectionTracker`, `StreamOptions`, `StreamStats`, `Probe` with `ProbeRecorder`, `MovingBar`, `Adb` |
 | `mac/Tests/SkyscreensKitTests/` | Swift | Swift Testing suites. The encoder suite runs on the real hardware encoder and skips where there is none |
 | `mac/Sources/CVirtualDisplay/` | Obj-C header | Declarations for the private `CGVirtualDisplay` API |
 | `mac/Sources/CLink/include/link.h` | C header | Generated from `crates/link/src/ffi.rs` by cbindgen. Never edit it by hand |
@@ -22,7 +22,7 @@ skyscreens gives a Mac extra monitors inside a Meta Quest 3. A Mac helper create
 | `crates/fake-headset/` | Rust | Headless stand-in for the headset, used by the loopback tests and `scripts/eval.sh mac` |
 | `xr/src/` | Rust | `app.rs` (session, test screen, video layer, frame loop), `runtime.rs` (OpenXR and Vulkan bootstrap), `android.rs`, `net.rs`, `decoder.rs`, `gpu.rs`, `platform.rs`, `layout.rs`, `pattern.rs` |
 | `xr/android/AndroidManifest.xml`, `xr/build.sh` | XML, bash | Quest manifest; the APK build without Gradle |
-| `scripts/` | bash, Python | `check.sh` (all checks), `eval.sh` (end-to-end evals), `comments.py`, `commit_msg.py`, `android-env.sh`, git hooks |
+| `scripts/` | bash, Python | `check.sh` (all checks), `eval.sh` and `eval_judge.py` (end-to-end evals), `limits.py`, `comments.py`, `commit_msg.py`, `android-env.sh`, git hooks |
 | `.github/workflows/` | YAML | `ci.yml` (runs `scripts/check.sh`), `claude.yml` (`@claude` mentions), `claude-review.yml` (PR review) |
 | `bench/` | Swift, Python | Measurements and simulations behind the design. Not part of the apps |
 
@@ -69,41 +69,21 @@ Report what you ran and what you could not run. Never claim a device result you 
   - round-trip p50, which must be ≤ 60 ms;
   - cleanup: the virtual screen must be gone afterwards.
 
-  Reference run, MacBook Air M2: 57 fps, round trip p50 8.8 ms, keyframe request answered in 8 ms.
+  Reference run, MacBook Air M2: 57 fps, round trip p50 8.0 ms (p95 12.9 ms), keyframe request answered in 14 ms.
 - **`quest`**: builds and installs both apps and keeps the headset awake without anyone wearing it. Then it streams the test pattern through `adb reverse`. It checks the stream summary and the headset log, and saves a headset screenshot when the device allows it.
 - `EVAL_SECONDS`, `EVAL_MIN_FPS`, `EVAL_MAX_ROUND_TRIP_MS` and `EVAL_SKIP_BUILD=1` adjust a run.
 
 ## Code standards
 
-These hold for Rust, Swift, C, shell and Python. The checks enforce every rule they can.
+[docs/code-standards.md](docs/code-standards.md) is the full list: every rule, where it comes from, and the tool and setting that enforce it. It also lists the recommendations we chose not to adopt, and why. `scripts/check.sh` enforces every rule it can. The ones you will meet most often:
 
-**Structure**
-- One responsibility per module or type. Split a file before it mixes concerns. Clippy rejects functions over 80 lines.
-- Keep platform code at the edges. Pure logic (protocol, layout, framing, stats, option parsing) lives in plain modules with no OS calls, so it can be tested anywhere.
-- Inject what you need to test: a `TcpListener` rather than a port, options rather than globals, a closure rather than a callback type.
-- Name constants. No magic numbers in logic: channels live in `link::channel`, limits in `link`, tuning values in named constants next to their use.
-
-**No comments**
-- Source files contain no comments or doc comments. `scripts/comments.py` fails the build on any. Shebangs and the `swift-tools-version` line are the only exceptions.
-- Explain intent with names, types and tests instead. A function named `drain_input_to_stay_responsive` replaces a comment.
-- Write down design reasons in [docs/architecture.md](docs/architecture.md), and traps in "Pitfalls already found" below. To silence a lint, use `#[expect(lint, reason = "…")]`; `#[allow]` is rejected.
-
-**Errors and safety**
-- Return errors; don't panic. Panics are only for broken invariants in constructors and tests. Poisoned mutexes are recovered with `PoisonError::into_inner`.
-- No force unwraps, `try!` or implicitly unwrapped optionals in Swift (swift-format rules). No `unwrap` outside tests in new Rust code where an error can be returned.
-- Keep `unsafe` small and behind a safe function: `handle()` and `slice()` in `ffi.rs` are the pattern. FFI functions check their pointers for null.
-- Bound everything that comes off the network: fragment size, message size, screen count.
-
-**Formatting and lints**
-- Rust: rustfmt (`rustfmt.toml`), clippy `all` and `pedantic` as errors, edition 2024, toolchain pinned in `rust-toolchain.toml`.
-- Swift: `swift format` in strict mode (`.swift-format`), compiled with warnings as errors.
-- Python: ruff format and ruff lint (`ruff.toml`). Shell: bash with `set -euo pipefail`, shellcheck with all optional checks (`.shellcheckrc`).
-- Dependencies: `cargo deny` checks licenses, advisories and sources (`deny.toml`). Add a dependency only when it removes real code or risk.
-
-**Tests**
-- Name a test after the behavior it proves: `a_missing_fragment_drops_only_that_message`.
-- Tests are deterministic. Property tests use a fixed seed, network tests bind port 0, and waits poll with a deadline instead of sleeping a fixed time.
-- Hardware-dependent tests skip themselves where the hardware is missing (`.enabled(if:)` in Swift) and run everywhere else.
+- **Size.** Files up to 400 lines (shell 150), functions up to 50, at most 6 parameters, cyclomatic complexity 10, nesting 5. Split before you hit a limit.
+- **No comments.** Intent lives in names, types and tests; design reasons live in `docs/`. Silence a lint only with a stated reason: `#[expect(lint, reason = "…")]` in Rust, or a config entry explained in `docs/code-standards.md`.
+- **Rust.** Edition 2024, clippy `all` and `pedantic` plus a curated restriction set, all as errors. No `unwrap`, `expect` or `panic!` outside tests. `unsafe` only in modules that opt in with `#![expect(unsafe_code, …)]`, with one unsafe operation per block. Match enum variants by name, not `_`. Host Rust keeps at least 85% line coverage.
+- **Swift.** Swift 6 language mode with `ExistentialAny` and `MemberImportVisibility`, swift-format and SwiftLint in strict mode. UI is `@MainActor`; work on other threads lives in separate lock-protected types. No force unwraps, no `unowned`.
+- **Python.** Every ruff rule (a few documented exceptions), and mypy `--strict` for `scripts/` and `docs/images/`.
+- **Shell.** bash with `set -euo pipefail`, every ShellCheck check, shfmt in Google style. Call functions as plain statements, never inside `&&` chains.
+- **Tests.** Named after the behavior they prove, deterministic (fixed seeds, port 0, waits with deadlines). Hardware tests skip themselves where the hardware is missing.
 
 ## Rules
 
@@ -152,6 +132,9 @@ These hold for Rust, Swift, C, shell and Python. The checks enforce every rule t
 | The Vulkan or OpenXR loader disappears mid-run | `ash::Entry` and `xr::Entry` unload the library when dropped. `runtime.rs` keeps both alive in `Runtime` and `Vulkan` |
 | `sdkmanager` finishes but installs nothing | Use the `android` tool from the same folder (see the development guide) |
 | Swift build fails in CI but not locally | Call arguments with a trailing comma need Swift 6.1. Keep `.swift-format` at `keptAsWritten` |
+| A check fails silently in a shell script | A function called inside `&&` or `\|\|` runs with `set -e` off. Call it as a plain statement (ShellCheck SC2310 catches this) |
+| Swift 6: "sending … risks causing data races" | A non-Sendable value crosses actors. Keep UI state on `@MainActor` and move cross-thread state into a lock-protected type, as `FramePipeline` does |
+| `cargo llvm-cov` warns that some functions have mismatched data | Harmless: `link` is compiled into several test binaries with different `cfg(test)`. The coverage totals are still correct |
 
 ## Where things are going
 

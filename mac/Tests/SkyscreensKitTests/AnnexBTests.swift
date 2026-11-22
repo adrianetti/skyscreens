@@ -21,8 +21,8 @@ func nalUnitTypes(_ annexB: Data) -> [UInt8] {
 struct AnnexBTests {
     func convert(_ input: [UInt8], lengthSize: Int = 4) -> (Bool, [UInt8]) {
         var out = Data()
-        let ok = input.withUnsafeBufferPointer {
-            VideoEncoder.appendUnits(lengthPrefixed: $0, lengthSize: lengthSize, to: &out)
+        let ok = input.withUnsafeBufferPointer { buffer in
+            VideoEncoder.appendUnits(lengthPrefixed: buffer, lengthSize: lengthSize, to: &out)
         }
         return (ok, [UInt8](out))
     }

@@ -7,8 +7,8 @@ public struct StreamOptions: Equatable {
 
         public var description: String {
             switch self {
-            case .badSeconds(let v): "--seconds needs a positive number, got \(v ?? "nothing")"
-            case .unknown(let a): "unknown stream option \(a)"
+            case .badSeconds(let value): "--seconds needs a positive number, got \(value ?? "nothing")"
+            case .unknown(let argument): "unknown stream option \(argument)"
             }
         }
     }
@@ -29,8 +29,10 @@ public struct StreamOptions: Equatable {
             switch arg {
             case "--seconds":
                 let value = rest.popFirst()
-                guard let s = value.flatMap(Double.init), s > 0, s.isFinite else { throw ParseError.badSeconds(value) }
-                seconds = s
+                guard let parsed = value.flatMap(Double.init), parsed > 0, parsed.isFinite else {
+                    throw ParseError.badSeconds(value)
+                }
+                seconds = parsed
             case "--no-headset":
                 launchHeadset = false
             case "--test-pattern":

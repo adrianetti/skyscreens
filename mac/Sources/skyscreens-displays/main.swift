@@ -45,7 +45,7 @@ do {
     set = try VirtualDisplaySet(specs)
     try set.waitUntilReady()
     let started = Started(pid: getpid(), screens: zip(set.ids, specs).map { .init(id: $0, spec: $1) })
-    print(String(decoding: try JSONEncoder().encode(started), as: UTF8.self))
+    print(String(bytes: try JSONEncoder().encode(started), encoding: .utf8) ?? "")
 } catch {
     FileHandle.standardError.write(Data("skyscreens-displays: \(error)\n".utf8))
     exit(1)

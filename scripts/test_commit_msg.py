@@ -8,7 +8,7 @@ from commit_msg import problems
 
 
 class CommitMessageTests(unittest.TestCase):
-    def test_accepts_the_project_style(self):
+    def test_accepts_the_project_style(self) -> None:
         for subject in [
             "feat(xr): decode into a surface layer",
             "fix(mac): sign with a stable identity",
@@ -18,7 +18,7 @@ class CommitMessageTests(unittest.TestCase):
         ]:
             self.assertEqual(problems(subject), [], subject)
 
-    def test_rejects_everything_else(self):
+    def test_rejects_everything_else(self) -> None:
         for subject in [
             "Update stuff",
             "feat:missing space",

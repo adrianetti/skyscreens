@@ -16,7 +16,7 @@ const RECONNECT_DELAY: Duration = Duration::from_millis(500);
 const READ_BUFFER: usize = 256 * 1024;
 
 #[derive(Default)]
-pub struct Shared {
+pub(crate) struct Shared {
     sender: Mutex<Option<Sender>>,
     window: Mutex<Option<(NativeWindow, i32, i32)>>,
     decoder: Mutex<Option<Decoder>>,
@@ -24,12 +24,12 @@ pub struct Shared {
 }
 
 impl Shared {
-    pub fn detach_window(&self) {
+    pub(crate) fn detach_window(&self) {
         *lock(&self.decoder) = None;
         *lock(&self.window) = None;
     }
 
-    pub fn set_window(&self, window: NativeWindow, width: i32, height: i32) {
+    pub(crate) fn set_window(&self, window: NativeWindow, width: i32, height: i32) {
         *lock(&self.decoder) = None;
         *lock(&self.window) = Some((window, width, height));
         self.request_keyframe();
@@ -44,11 +44,19 @@ impl Shared {
     }
 
     fn request_keyframe(&self) {
-        let mut last = lock(&self.last_request);
-        if last.is_none_or(|t| t.elapsed() > KEYFRAME_REQUEST_INTERVAL) {
-            *last = Some(Instant::now());
+        if self.keyframe_request_due() {
             self.send(&Message::KeyframeRequest { screen: 0 });
         }
+    }
+
+    fn keyframe_request_due(&self) -> bool {
+        let mut last = lock(&self.last_request);
+        let due = last.is_none_or(|t| t.elapsed() > KEYFRAME_REQUEST_INTERVAL);
+        if due {
+            *last = Some(Instant::now());
+        }
+        drop(last);
+        due
     }
 
     fn on_video(self: &Arc<Self>, key: bool, pts_us: u64, data: &[u8]) {
@@ -87,21 +95,23 @@ impl Shared {
     }
 }
 
-pub fn spawn(shared: Arc<Shared>, screens: mpsc::Sender<Vec<Screen>>) -> std::io::Result<()> {
-    std::thread::Builder::new().name("net".into()).spawn(move || {
-        loop {
-            if let Ok(stream) = TcpStream::connect(("127.0.0.1", DEFAULT_PORT)) {
-                log::info!("connected to the Mac");
-                if let Err(e) = session(stream, &shared, &screens) {
-                    log::warn!("connection: {e}");
-                }
-                log::info!("disconnected");
-                *lock(&shared.decoder) = None;
-            }
-            std::thread::sleep(RECONNECT_DELAY);
-        }
-    })?;
+pub(crate) fn spawn(shared: Arc<Shared>, screens: mpsc::Sender<Vec<Screen>>) -> std::io::Result<()> {
+    std::thread::Builder::new().name("net".into()).spawn(move || reconnect_forever(&shared, &screens))?;
     Ok(())
+}
+
+fn reconnect_forever(shared: &Arc<Shared>, screens: &mpsc::Sender<Vec<Screen>>) -> ! {
+    loop {
+        if let Ok(stream) = TcpStream::connect(("127.0.0.1", DEFAULT_PORT)) {
+            log::info!("connected to the Mac");
+            if let Err(e) = session(stream, shared, screens) {
+                log::warn!("connection: {e}");
+            }
+            log::info!("disconnected");
+            *lock(&shared.decoder) = None;
+        }
+        std::thread::sleep(RECONNECT_DELAY);
+    }
 }
 
 fn session(stream: TcpStream, shared: &Arc<Shared>, screens: &mpsc::Sender<Vec<Screen>>) -> crate::Result<()> {
@@ -134,7 +144,14 @@ fn receive(mut stream: TcpStream, shared: &Arc<Shared>, screens: &mpsc::Sender<V
                     let _ = screens.send(s);
                 }
                 Message::Video { screen: 0, key, pts_us, data } => shared.on_video(key, pts_us, &data),
-                _ => {}
+                Message::Hello { .. }
+                | Message::Video { .. }
+                | Message::Tile { .. }
+                | Message::Cursor { .. }
+                | Message::CursorShape { .. }
+                | Message::KeyframeRequest { .. }
+                | Message::Ping { .. }
+                | Message::Pong { .. } => {}
             }
         }
     }

@@ -10,46 +10,56 @@ from pathlib import Path
 W, H = 1536, 1024
 HERE = Path(__file__).resolve().parent
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+SIPS = "/usr/bin/sips"
+
+Point = tuple[float, float]
+Quad = list[Point]
+
+HIGHLIGHTED_FILE = 5
+CODE_RIGHT_EDGE = 1500
+UNREAD_CHAT = 2
+UNREAD_EMAILS = 3
+SKY_BANDS = 3
 
 INK = "#0c1322"
 PANEL = "#121a2c"
 MUTED = "#5d6b85"
 SYNTAX = ["#7cc4ff", "#c792ea", "#ffcb6b", "#c3e88d", "#f78c6c", "#89ddff"]
 
-CODE = [(478, 186), (1058, 186), (1058, 548), (478, 548)]
-CHAT = [(113, 256), (456, 230), (456, 505), (113, 478)]
-EMAIL = [(1080, 230), (1423, 256), (1423, 478), (1080, 505)]
-VIDEO = [(628, 18), (908, 18), (923, 170), (613, 170)]
+CODE: Quad = [(478, 186), (1058, 186), (1058, 548), (478, 548)]
+CHAT: Quad = [(113, 256), (456, 230), (456, 505), (113, 478)]
+EMAIL: Quad = [(1080, 230), (1423, 256), (1423, 478), (1080, 505)]
+VIDEO: Quad = [(628, 18), (908, 18), (923, 170), (613, 170)]
 
 
 class Screen:
-    def __init__(self, w, h, quad):
+    def __init__(self, w: float, h: float, quad: Quad) -> None:
         self.w, self.h, self.quad = w, h, quad
-        self.parts = []
+        self.parts: list[str] = []
 
-    def at(self, x, y):
+    def at(self, x: float, y: float) -> Point:
         (tlx, tly), (trx, try_), (brx, bry), (blx, bly) = self.quad
         u, v = x / self.w, y / self.h
         top = (tlx + u * (trx - tlx), tly + u * (try_ - tly))
         bottom = (blx + u * (brx - blx), bly + u * (bry - bly))
         return top[0] + v * (bottom[0] - top[0]), top[1] + v * (bottom[1] - top[1])
 
-    def poly(self, points, fill, opacity=1.0):
+    def poly(self, points: list[Point], fill: str, opacity: float = 1.0) -> None:
         pts = " ".join(f"{px:.1f},{py:.1f}" for px, py in (self.at(x, y) for x, y in points))
         op = "" if opacity == 1 else f' opacity="{opacity}"'
         self.parts.append(f'<polygon points="{pts}" fill="{fill}"{op}/>')
 
-    def rect(self, x, y, w, h, fill, opacity=1.0):
+    def rect(self, x: float, y: float, w: float, h: float, fill: str, opacity: float = 1.0) -> None:
         self.poly([(x, y), (x + w, y), (x + w, y + h), (x, y + h)], fill, opacity)
 
-    def circle(self, cx, cy, r, fill, opacity=1.0):
+    def circle(self, cx: float, cy: float, r: float, fill: str, opacity: float = 1.0) -> None:
         self.poly(
             [(cx + r * math.cos(a * math.pi / 12), cy + r * math.sin(a * math.pi / 12)) for a in range(24)],
             fill,
             opacity,
         )
 
-    def svg(self):
+    def svg(self) -> str:
         o = " ".join(f"{x:.1f},{y:.1f}" for x, y in self.quad)
         return "\n".join(
             [
@@ -62,14 +72,14 @@ class Screen:
         )
 
 
-def menu_bar(s):
+def menu_bar(s: Screen) -> None:
     s.rect(0, 0, s.w, 26, "#1a2236")
     s.circle(22, 13, 6, MUTED)
     for i, w in enumerate([46, 38, 52, 40]):
         s.rect(50 + i * 70, 9, w, 8, MUTED, 0.7)
 
 
-def code_screen(quad):
+def code_screen(quad: Quad) -> Screen:
     s = Screen(1616, 1008, quad)
     menu_bar(s)
     s.rect(40, 56, 1536, 912, "#0f1626")
@@ -78,7 +88,9 @@ def code_screen(quad):
         s.circle(66 + i * 24, 75, 7, c)
     s.rect(40, 94, 250, 874, PANEL)
     for i in range(16):
-        s.rect(64 + (i % 4 > 0) * 22, 124 + i * 40, 130 + (i * 37) % 70, 12, MUTED, 0.55 if i != 5 else 1)
+        s.rect(
+            64 + (i % 4 > 0) * 22, 124 + i * 40, 130 + (i * 37) % 70, 12, MUTED, 0.55 if i != HIGHLIGHTED_FILE else 1
+        )
     rng = random.Random(7)
     indent = 0
     for row in range(22):
@@ -90,7 +102,7 @@ def code_screen(quad):
         x = 360 + indent * 44
         for _ in range(rng.randint(1, 4)):
             w = rng.choice([40, 64, 90, 120, 160, 210])
-            if x + w > 1500:
+            if x + w > CODE_RIGHT_EDGE:
                 break
             s.rect(x, y, w, 12, rng.choice(SYNTAX))
             x += w + 14
@@ -99,12 +111,12 @@ def code_screen(quad):
     return s
 
 
-def chat_screen(quad):
+def chat_screen(quad: Quad) -> Screen:
     s = Screen(1296, 816, quad)
     menu_bar(s)
     s.rect(0, 26, 250, 790, PANEL)
     for i in range(10):
-        s.rect(30, 70 + i * 52, 140 + (i * 29) % 50, 14, MUTED, 1 if i == 2 else 0.5)
+        s.rect(30, 70 + i * 52, 140 + (i * 29) % 50, 14, MUTED, 1 if i == UNREAD_CHAT else 0.5)
     y = 70
     for i, (w, h) in enumerate([(420, 70), (300, 54), (520, 96), (260, 54), (460, 70), (340, 54)]):
         if i % 2:
@@ -117,7 +129,7 @@ def chat_screen(quad):
     return s
 
 
-def email_screen(quad):
+def email_screen(quad: Quad) -> Screen:
     s = Screen(1296, 816, quad)
     menu_bar(s)
     s.rect(0, 26, 210, 790, PANEL)
@@ -128,7 +140,7 @@ def email_screen(quad):
         y = 46 + i * 84
         if i == 1:
             s.rect(214, y - 12, 412, 80, "#2f6feb", 0.85)
-        s.rect(240, y, 200 + (i * 41) % 120, 14, "#e6edf3", 0.9 if i < 3 else 0.6)
+        s.rect(240, y, 200 + (i * 41) % 120, 14, "#e6edf3", 0.9 if i < UNREAD_EMAILS else 0.6)
         s.rect(240, y + 28, 330, 10, MUTED, 0.8)
         s.rect(240, y + 46, 260, 10, MUTED, 0.5)
     s.rect(680, 70, 480, 22, "#e6edf3", 0.9)
@@ -137,10 +149,10 @@ def email_screen(quad):
     return s
 
 
-def video_screen(quad):
+def video_screen(quad: Quad) -> Screen:
     s = Screen(1296, 736, quad)
     for i, c in enumerate(["#1d3b6e", "#2b5591", "#3f72b0", "#e7a977"]):
-        s.rect(0, i * 130, 1296, 130 if i < 3 else 210, c)
+        s.rect(0, i * 130, 1296, 130 if i < SKY_BANDS else 210, c)
     s.circle(930, 330, 70, "#ffd58a")
     s.poly([(0, 736), (0, 470), (260, 300), (520, 520), (760, 340), (1040, 560), (1296, 420), (1296, 736)], "#203252")
     s.poly([(0, 736), (0, 600), (300, 500), (640, 640), (980, 520), (1296, 640), (1296, 736)], "#141f36")
@@ -151,7 +163,7 @@ def video_screen(quad):
     return s
 
 
-def scene(with_text, out_w, out_h):
+def scene(*, with_text: bool, out_w: int, out_h: int) -> str:
     photo = base64.b64encode((HERE / "background.jpg").read_bytes()).decode()
     view_h = W // 2 if with_text else H
     out = [
@@ -159,8 +171,10 @@ def scene(with_text, out_w, out_h):
         "<defs>",
         '<filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="16"/></filter>',
         '<filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feGaussianBlur stdDeviation="18"/></filter>',
-        '<radialGradient id="fade" cx="0" cy="0" r="0.75"><stop offset="0" stop-color="#05070d" stop-opacity="0.8"/>'
-        '<stop offset="1" stop-color="#05070d" stop-opacity="0"/></radialGradient>',
+        (
+            '<radialGradient id="fade" cx="0" cy="0" r="0.75"><stop offset="0" stop-color="#05070d" stop-opacity="0.8"/>'
+            '<stop offset="1" stop-color="#05070d" stop-opacity="0"/></radialGradient>'
+        ),
         "</defs>",
         f'<image href="data:image/jpeg;base64,{photo}" x="0" y="0" width="{W}" height="{H}"/>',
         f'<rect width="{W}" height="{H}" fill="#05070d" opacity="0.12"/>',
@@ -183,7 +197,7 @@ def scene(with_text, out_w, out_h):
     return "\n".join(out) + "\n"
 
 
-def render(svg, out_w, out_h, target):
+def render(svg: str, out_w: int, out_h: int, target: Path) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         src, png = Path(tmp) / "scene.svg", Path(tmp) / "scene.png"
         src.write_text(svg)
@@ -201,7 +215,7 @@ def render(svg, out_w, out_h, target):
             capture_output=True,
         )
         subprocess.run(
-            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "86", str(png), "--out", str(target)],
+            [SIPS, "-s", "format", "jpeg", "-s", "formatOptions", "86", str(png), "--out", str(target)],
             check=True,
             capture_output=True,
         )
@@ -209,5 +223,5 @@ def render(svg, out_w, out_h, target):
 
 
 if __name__ == "__main__":
-    render(scene(False, W, H), W, H, HERE / "banner.jpg")
-    render(scene(True, 1280, 640), 1280, 640, HERE / "social-preview.jpg")
+    render(scene(with_text=False, out_w=W, out_h=H), W, H, HERE / "banner.jpg")
+    render(scene(with_text=True, out_w=1280, out_h=640), 1280, 640, HERE / "social-preview.jpg")

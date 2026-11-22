@@ -1,9 +1,14 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import Foundation
 import PackageDescription
 
 let rustLib = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../target/release")
     .standardized.path
+
+let strictSettings: [SwiftSetting] = [
+    .enableUpcomingFeature("ExistentialAny"),
+    .enableUpcomingFeature("MemberImportVisibility"),
+]
 
 let package = Package(
     name: "skyscreens",
@@ -18,6 +23,7 @@ let package = Package(
         .target(
             name: "SkyscreensKit",
             dependencies: ["CVirtualDisplay", "CLink"],
+            swiftSettings: strictSettings,
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ScreenCaptureKit"),
@@ -26,8 +32,8 @@ let package = Package(
                 .linkedFramework("CoreVideo"),
             ]
         ),
-        .executableTarget(name: "skyscreens-displays", dependencies: ["SkyscreensKit"]),
-        .executableTarget(name: "skyscreens", dependencies: ["SkyscreensKit"]),
-        .testTarget(name: "SkyscreensKitTests", dependencies: ["SkyscreensKit"]),
+        .executableTarget(name: "skyscreens-displays", dependencies: ["SkyscreensKit"], swiftSettings: strictSettings),
+        .executableTarget(name: "skyscreens", dependencies: ["SkyscreensKit"], swiftSettings: strictSettings),
+        .testTarget(name: "SkyscreensKitTests", dependencies: ["SkyscreensKit"], swiftSettings: strictSettings),
     ]
 )

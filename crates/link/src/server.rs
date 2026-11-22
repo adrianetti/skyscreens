@@ -35,19 +35,19 @@ impl std::fmt::Debug for Server {
 }
 
 impl Server {
-    pub fn bind(port: u16) -> io::Result<Arc<Server>> {
+    pub fn bind(port: u16) -> io::Result<Arc<Self>> {
         Self::listen(TcpListener::bind(("127.0.0.1", port))?)
     }
 
-    pub fn listen(listener: TcpListener) -> io::Result<Arc<Server>> {
-        let server = Arc::new(Server {
+    pub fn listen(listener: TcpListener) -> io::Result<Arc<Self>> {
+        let server = Arc::new(Self {
             addr: listener.local_addr()?,
             sender: Mutex::new(None),
             screens: Mutex::new(Vec::new()),
             connected: AtomicBool::new(false),
             handler: Mutex::new(None),
         });
-        let accepting = server.clone();
+        let accepting = Arc::clone(&server);
         thread::Builder::new().name("link-accept".into()).spawn(move || accepting.accept_forever(&listener))?;
         Ok(server)
     }
@@ -102,7 +102,7 @@ impl Server {
         let _ = sender.send(channel::MAC_CONTROL, Priority::Control, &Message::Screens(screens));
         *lock(&self.sender) = Some(sender.clone());
         self.connected.store(true, Ordering::SeqCst);
-        let me = self.clone();
+        let me = Arc::clone(self);
         let read = thread::spawn(move || me.read_until_closed(reader));
         let _ = sender.pump(stream);
         let _ = stream.shutdown(Shutdown::Both);
@@ -133,7 +133,13 @@ fn event_from(m: &Message) -> Option<Event> {
     match *m {
         Message::KeyframeRequest { screen } => Some(Event::KeyframeRequest { screen }),
         Message::Pong { t_us } => Some(Event::Pong { t_us }),
-        _ => None,
+        Message::Hello { .. }
+        | Message::Screens(_)
+        | Message::Video { .. }
+        | Message::Tile { .. }
+        | Message::Cursor { .. }
+        | Message::CursorShape { .. }
+        | Message::Ping { .. } => None,
     }
 }
 

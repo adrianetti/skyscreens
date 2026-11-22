@@ -21,14 +21,14 @@ fn color_at(x: usize, y: usize, w: usize, h: usize) -> [u8; 3] {
     let (cx, cy) = (w / 2, h / 2);
     let in_patch = |center_x: usize| x.abs_diff(center_x) < PATCH && y.abs_diff(cy) < PATCH;
     let alternate = |on: bool| if on { WHITE } else { BLACK };
-    if x % PATCH == 0 || y % PATCH == 0 {
+    if x.is_multiple_of(PATCH) || y.is_multiple_of(PATCH) {
         GRID
     } else if in_patch(cx) {
-        alternate((x + y) % 2 == 0)
+        alternate((x + y).is_multiple_of(2))
     } else if in_patch(cx.saturating_sub(PATCH_SPACING)) {
-        alternate(x % 2 == 0)
+        alternate(x.is_multiple_of(2))
     } else if in_patch(cx + PATCH_SPACING) {
-        alternate(y % 2 == 0)
+        alternate(y.is_multiple_of(2))
     } else if y + BAR_HEIGHT > h {
         BARS[x * BARS.len() / w]
     } else {

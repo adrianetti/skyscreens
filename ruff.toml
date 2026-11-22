@@ -2,5 +2,29 @@ line-length = 120
 target-version = "py311"
 
 [lint]
-select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "RUF", "PL", "ERA"]
-ignore = ["E501", "PLR2004", "PLR0912", "PLR0913", "PLR0915", "PLR0917"]
+select = ["ALL"]
+ignore = [
+  "D",
+  "CPY",
+  "COM812",
+  "ISC001",
+  "E501",
+  "PT009",
+  "PT027",
+  "INP001",
+]
+
+[lint.per-file-ignores]
+"scripts/*.py" = ["T201", "S603", "S607"]
+"scripts/test_*.py" = ["PLR2004", "S101"]
+"docs/images/*.py" = ["S311", "S603", "T201"]
+"bench/*.py" = ["ANN", "T201", "S311", "PLR2004", "N806", "N816", "FBT", "C901", "PLR0912", "PLR0913", "PLR0914", "PLR0915", "PLR0917"]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-args = 6
+max-positional-args = 6
+max-statements = 50
+max-branches = 12

@@ -15,14 +15,14 @@ pub enum Priority {
 }
 
 impl From<u8> for Priority {
-    fn from(v: u8) -> Priority {
+    fn from(v: u8) -> Self {
         match v {
-            0 => Priority::Control,
-            1 => Priority::Cursor,
-            2 => Priority::Focused,
-            3 => Priority::Video,
-            4 => Priority::Background,
-            _ => Priority::Refine,
+            0 => Self::Control,
+            1 => Self::Cursor,
+            2 => Self::Focused,
+            3 => Self::Video,
+            4 => Self::Background,
+            _ => Self::Refine,
         }
     }
 }
@@ -37,7 +37,7 @@ pub enum SendError {
 impl std::fmt::Display for SendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SendError::TooLarge(n) => write!(f, "message of {n} bytes exceeds {MAX_MESSAGE}"),
+            Self::TooLarge(n) => write!(f, "message of {n} bytes exceeds {MAX_MESSAGE}"),
         }
     }
 }
@@ -60,9 +60,21 @@ struct Queues {
     closed: bool,
 }
 
+impl Queues {
+    fn push(&mut self, priority: Priority, channel: u8, body: Vec<u8>, count: u16, latest_only: bool) {
+        let id = self.ids[usize::from(channel)];
+        self.ids[usize::from(channel)] = id.wrapping_add(1);
+        let level = &mut self.levels[priority as usize];
+        if latest_only {
+            level.retain(|p| p.channel != channel || p.next > 0);
+        }
+        level.push_back(Pending { channel, id, body, next: 0, count });
+    }
+}
+
 impl Default for Queues {
     fn default() -> Self {
-        Queues { levels: Default::default(), ids: [0; 256], closed: false }
+        Self { levels: Default::default(), ids: [0; 256], closed: false }
     }
 }
 
@@ -73,9 +85,9 @@ pub struct Sender {
 }
 
 impl Sender {
-    pub fn new(fragment: usize) -> Sender {
+    pub fn new(fragment: usize) -> Self {
         assert!((1..=MAX_FRAGMENT).contains(&fragment), "fragment size {fragment} outside 1..={MAX_FRAGMENT}");
-        Sender { inner: Arc::new((Mutex::new(Queues::default()), Condvar::new())), fragment }
+        Self { inner: Arc::new((Mutex::new(Queues::default()), Condvar::new())), fragment }
     }
 
     pub fn send(&self, channel: u8, priority: Priority, msg: &Message) -> Result<(), SendError> {
@@ -121,16 +133,10 @@ impl Sender {
         if body.len() > MAX_MESSAGE {
             return Err(SendError::TooLarge(body.len()));
         }
-        let count =
-            u16::try_from(body.len().div_ceil(self.fragment).max(1)).map_err(|_| SendError::TooLarge(body.len()))?;
-        let mut q = self.queues();
-        let level = &mut q.levels[priority as usize];
-        if latest_only {
-            level.retain(|p| p.channel != channel || p.next > 0);
-        }
-        let id = q.ids[usize::from(channel)];
-        q.ids[usize::from(channel)] = id.wrapping_add(1);
-        q.levels[priority as usize].push_back(Pending { channel, id, body, next: 0, count });
+        let Ok(count) = u16::try_from(body.len().div_ceil(self.fragment).max(1)) else {
+            return Err(SendError::TooLarge(body.len()));
+        };
+        self.queues().push(priority, channel, body, count, latest_only);
         self.inner.1.notify_one();
         Ok(())
     }

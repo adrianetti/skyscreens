@@ -12,9 +12,9 @@ pub enum StreamError {
 impl std::fmt::Display for StreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StreamError::BadFragment => write!(f, "fragment length out of range"),
-            StreamError::MessageTooLarge => write!(f, "message exceeds {MAX_MESSAGE} bytes"),
-            StreamError::Decode(e) => write!(f, "undecodable message: {e:?}"),
+            Self::BadFragment => write!(f, "fragment length out of range"),
+            Self::MessageTooLarge => write!(f, "message exceeds {MAX_MESSAGE} bytes"),
+            Self::Decode(e) => write!(f, "undecodable message: {e:?}"),
         }
     }
 }
@@ -37,7 +37,7 @@ struct Fragment<'a> {
 }
 
 impl<'a> Fragment<'a> {
-    fn parse(f: &'a [u8]) -> Fragment<'a> {
+    fn parse(f: &'a [u8]) -> Self {
         Fragment {
             channel: f[0],
             id: u32::from_le_bytes([f[1], f[2], f[3], f[4]]),
@@ -79,7 +79,7 @@ impl Reassembler {
         Ok(out)
     }
 
-    fn accept(partial: &mut HashMap<u8, Partial>, f: &Fragment) -> Result<Option<Vec<u8>>, StreamError> {
+    fn accept(partial: &mut HashMap<u8, Partial>, f: &Fragment<'_>) -> Result<Option<Vec<u8>>, StreamError> {
         if f.index == 0 {
             partial.insert(f.channel, Partial { id: f.id, next: 0, body: Vec::new() });
         }
@@ -96,7 +96,7 @@ impl Reassembler {
         if p.next < f.count {
             return Ok(None);
         }
-        Ok(partial.remove(&f.channel).map(|p| p.body))
+        Ok(partial.remove(&f.channel).map(|done| done.body))
     }
 }
 
@@ -132,10 +132,8 @@ mod tests {
 
     #[test]
     fn rejects_absurd_lengths() {
-        let mut r = Reassembler::default();
-        assert_eq!(r.feed(&u32::MAX.to_le_bytes()), Err(StreamError::BadFragment));
-        let mut r = Reassembler::default();
-        assert_eq!(r.feed(&3u32.to_le_bytes()), Err(StreamError::BadFragment));
+        assert_eq!(Reassembler::default().feed(&u32::MAX.to_le_bytes()), Err(StreamError::BadFragment));
+        assert_eq!(Reassembler::default().feed(&3u32.to_le_bytes()), Err(StreamError::BadFragment));
     }
 
     #[test]

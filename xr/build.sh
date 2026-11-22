@@ -11,7 +11,10 @@ mkdir -p "$OUT"
 LOADER="$OUT/openxr/jni/arm64-v8a/libopenxr_loader.so"
 if [[ ! -f "$LOADER" ]]; then
   curl -fsSL -o "$OUT/openxr.aar" "https://repo1.maven.org/maven2/org/khronos/openxr/openxr_loader_for_android/$OPENXR_LOADER/openxr_loader_for_android-$OPENXR_LOADER.aar"
-  echo "$OPENXR_LOADER_SHA256  $OUT/openxr.aar" | shasum -a 256 -c --quiet || { rm -f "$OUT/openxr.aar"; exit 1; }
+  echo "$OPENXR_LOADER_SHA256  $OUT/openxr.aar" | shasum -a 256 -c --quiet || {
+    rm -f "$OUT/openxr.aar"
+    exit 1
+  }
   unzip -oq "$OUT/openxr.aar" "jni/arm64-v8a/*" -d "$OUT/openxr"
 fi
 

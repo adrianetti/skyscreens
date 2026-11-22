@@ -20,6 +20,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 #[expect(
+    unsafe_code,
     clippy::no_mangle_with_rust_abi,
     clippy::needless_pass_by_value,
     reason = "android-activity calls android_main(AndroidApp) through the Rust ABI"

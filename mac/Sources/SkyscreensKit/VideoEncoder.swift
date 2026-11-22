@@ -2,8 +2,8 @@ import CoreMedia
 import QuartzCore
 import VideoToolbox
 
-public final class VideoEncoder {
-    public struct Frame {
+public final class VideoEncoder: @unchecked Sendable {
+    public struct Frame: Sendable {
         public let annexB: Data
         public let isKey: Bool
         public let pts: CMTime
@@ -44,21 +44,23 @@ public final class VideoEncoder {
         )
         guard status == noErr, let created else { throw EncoderError.createFailed(status) }
         session = created
-        let props: [CFString: CFTypeRef] = [
-            kVTCompressionPropertyKey_RealTime: kCFBooleanTrue,
-            kVTCompressionPropertyKey_AllowFrameReordering: kCFBooleanFalse,
+        let props: [CFString: Any] = [
+            kVTCompressionPropertyKey_RealTime: true,
+            kVTCompressionPropertyKey_AllowFrameReordering: false,
             kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_ConstrainedHigh_AutoLevel,
-            kVTCompressionPropertyKey_AverageBitRate: NSNumber(value: bitrate),
-            kVTCompressionPropertyKey_ExpectedFrameRate: NSNumber(value: fps),
-            kVTCompressionPropertyKey_MaxKeyFrameInterval: NSNumber(value: Int32.max),
+            kVTCompressionPropertyKey_AverageBitRate: bitrate,
+            kVTCompressionPropertyKey_ExpectedFrameRate: fps,
+            kVTCompressionPropertyKey_MaxKeyFrameInterval: Int32.max,
         ]
-        for (k, v) in props { VTSessionSetProperty(created, key: k, value: v) }
+        VTSessionSetProperties(created, propertyDictionary: props as CFDictionary)
         VTCompressionSessionPrepareToEncodeFrames(created)
     }
 
     deinit { VTCompressionSessionInvalidate(session) }
 
-    public func encode(_ buffer: CVPixelBuffer, pts: CMTime, forceKey: Bool = false, done: @escaping (Frame) -> Void) {
+    public func encode(
+        _ buffer: CVPixelBuffer, pts: CMTime, forceKey: Bool = false, done: @escaping @Sendable (Frame) -> Void
+    ) {
         let start = CACurrentMediaTime()
         let props = forceKey ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
         VTCompressionSessionEncodeFrame(

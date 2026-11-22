@@ -14,7 +14,7 @@ public enum Session {
         }
     }
 
-    public struct Screen: Decodable {
+    public struct Screen: Decodable, Sendable {
         public let id: CGDirectDisplayID
         public let spec: ScreenSpec
     }
@@ -35,19 +35,22 @@ public enum Session {
     static var logFile: URL { stateDir.appendingPathComponent("displays.log") }
 
     static var helperPath: String {
-        URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
-            .appendingPathComponent("skyscreens-displays").path
+        let executable = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        return executable.deletingLastPathComponent().appendingPathComponent("skyscreens-displays").path
     }
 
     public static func screens() -> [Screen] {
         struct Info: Decodable { let screens: [Screen] }
-        guard let s = status(), let info = try? JSONDecoder().decode(Info.self, from: Data(s.utf8)) else { return [] }
+        guard let json = status(), let info = try? JSONDecoder().decode(Info.self, from: Data(json.utf8)) else {
+            return []
+        }
         return info.screens
     }
 
     static func runningPID() -> Int32? {
         guard let data = try? Data(contentsOf: stateFile),
-            let line = String(decoding: data, as: UTF8.self).split(separator: "\n").first,
+            let text = String(bytes: data, encoding: .utf8),
+            let line = text.split(separator: "\n").first,
             let state = try? JSONDecoder().decode(State.self, from: Data(line.utf8)),
             kill(state.pid, 0) == 0
         else { return nil }
@@ -69,7 +72,7 @@ public enum Session {
         let pid = try spawnDetached(argv)
         let deadline = Date().addingTimeInterval(startTimeout)
         while Date() < deadline {
-            if let s = status() { return s }
+            if let json = status() { return json }
             if kill(pid, 0) != 0 { break }
             usleep(pollInterval)
         }

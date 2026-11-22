@@ -9,13 +9,13 @@ pub enum Role {
 }
 
 impl From<u8> for Role {
-    fn from(v: u8) -> Role {
+    fn from(v: u8) -> Self {
         match v {
-            0 => Role::Code,
-            1 => Role::Chat,
-            2 => Role::Email,
-            3 => Role::Video,
-            _ => Role::Other,
+            0 => Self::Code,
+            1 => Self::Chat,
+            2 => Self::Email,
+            3 => Self::Video,
+            _ => Self::Other,
         }
     }
 }
@@ -50,51 +50,51 @@ pub enum DecodeError {
 pub const MAX_SCREENS: usize = u8::MAX as usize;
 
 mod tag {
-    pub const HELLO: u8 = 1;
-    pub const SCREENS: u8 = 2;
-    pub const VIDEO: u8 = 3;
-    pub const TILE: u8 = 4;
-    pub const CURSOR: u8 = 5;
-    pub const CURSOR_SHAPE: u8 = 6;
-    pub const KEYFRAME_REQUEST: u8 = 7;
-    pub const PING: u8 = 8;
-    pub const PONG: u8 = 9;
+    pub(super) const HELLO: u8 = 1;
+    pub(super) const SCREENS: u8 = 2;
+    pub(super) const VIDEO: u8 = 3;
+    pub(super) const TILE: u8 = 4;
+    pub(super) const CURSOR: u8 = 5;
+    pub(super) const CURSOR_SHAPE: u8 = 6;
+    pub(super) const KEYFRAME_REQUEST: u8 = 7;
+    pub(super) const PING: u8 = 8;
+    pub(super) const PONG: u8 = 9;
 }
 
 impl Message {
     pub fn encode(&self) -> Vec<u8> {
         let mut w = Writer(Vec::with_capacity(self.payload_len() + 32));
         match self {
-            Message::Hello { version, pixels_per_degree, refresh_rate, max_decoders, max_layers } => {
+            Self::Hello { version, pixels_per_degree, refresh_rate, max_decoders, max_layers } => {
                 w.u8(tag::HELLO).u16(*version).f32(*pixels_per_degree).f32(*refresh_rate);
                 w.u8(*max_decoders).u8(*max_layers);
             }
-            Message::Screens(screens) => {
+            Self::Screens(screens) => {
                 let sent = &screens[..screens.len().min(MAX_SCREENS)];
                 w.u8(tag::SCREENS).u8(u8::try_from(sent.len()).unwrap_or(u8::MAX));
                 for s in sent {
                     w.u8(s.id).u8(s.role as u8).u16(s.width).u16(s.height);
                 }
             }
-            Message::Video { screen, key, pts_us, data } => {
+            Self::Video { screen, key, pts_us, data } => {
                 w.u8(tag::VIDEO).u8(*screen).u8(u8::from(*key)).u64(*pts_us).bytes(data);
             }
-            Message::Tile { screen, x, y, w: width, h, lz4 } => {
+            Self::Tile { screen, x, y, w: width, h, lz4 } => {
                 w.u8(tag::TILE).u8(*screen).u16(*x).u16(*y).u16(*width).u16(*h).bytes(lz4);
             }
-            Message::Cursor { screen, x, y, shape } => {
+            Self::Cursor { screen, x, y, shape } => {
                 w.u8(tag::CURSOR).u8(*screen).f32(*x).f32(*y).u16(*shape);
             }
-            Message::CursorShape { shape, hot_x, hot_y, w: width, h, lz4 } => {
+            Self::CursorShape { shape, hot_x, hot_y, w: width, h, lz4 } => {
                 w.u8(tag::CURSOR_SHAPE).u16(*shape).u16(*hot_x).u16(*hot_y).u16(*width).u16(*h).bytes(lz4);
             }
-            Message::KeyframeRequest { screen } => {
+            Self::KeyframeRequest { screen } => {
                 w.u8(tag::KEYFRAME_REQUEST).u8(*screen);
             }
-            Message::Ping { t_us } => {
+            Self::Ping { t_us } => {
                 w.u8(tag::PING).u64(*t_us);
             }
-            Message::Pong { t_us } => {
+            Self::Pong { t_us } => {
                 w.u8(tag::PONG).u64(*t_us);
             }
         }
@@ -103,16 +103,21 @@ impl Message {
 
     fn payload_len(&self) -> usize {
         match self {
-            Message::Video { data, .. } => data.len(),
-            Message::Tile { lz4, .. } | Message::CursorShape { lz4, .. } => lz4.len(),
-            _ => 0,
+            Self::Video { data, .. } => data.len(),
+            Self::Tile { lz4, .. } | Self::CursorShape { lz4, .. } => lz4.len(),
+            Self::Hello { .. }
+            | Self::Screens(_)
+            | Self::Cursor { .. }
+            | Self::KeyframeRequest { .. }
+            | Self::Ping { .. }
+            | Self::Pong { .. } => 0,
         }
     }
 
-    pub fn decode(b: &[u8]) -> Result<Message, DecodeError> {
+    pub fn decode(b: &[u8]) -> Result<Self, DecodeError> {
         let mut r = Reader { b, i: 0 };
         Ok(match r.u8()? {
-            tag::HELLO => Message::Hello {
+            tag::HELLO => Self::Hello {
                 version: r.u16()?,
                 pixels_per_degree: r.f32()?,
                 refresh_rate: r.f32()?,
@@ -125,14 +130,14 @@ impl Message {
                 for _ in 0..n {
                     screens.push(Screen { id: r.u8()?, role: Role::from(r.u8()?), width: r.u16()?, height: r.u16()? });
                 }
-                Message::Screens(screens)
+                Self::Screens(screens)
             }
-            tag::VIDEO => Message::Video { screen: r.u8()?, key: r.u8()? != 0, pts_us: r.u64()?, data: r.rest() },
+            tag::VIDEO => Self::Video { screen: r.u8()?, key: r.u8()? != 0, pts_us: r.u64()?, data: r.rest() },
             tag::TILE => {
-                Message::Tile { screen: r.u8()?, x: r.u16()?, y: r.u16()?, w: r.u16()?, h: r.u16()?, lz4: r.rest() }
+                Self::Tile { screen: r.u8()?, x: r.u16()?, y: r.u16()?, w: r.u16()?, h: r.u16()?, lz4: r.rest() }
             }
-            tag::CURSOR => Message::Cursor { screen: r.u8()?, x: r.f32()?, y: r.f32()?, shape: r.u16()? },
-            tag::CURSOR_SHAPE => Message::CursorShape {
+            tag::CURSOR => Self::Cursor { screen: r.u8()?, x: r.f32()?, y: r.f32()?, shape: r.u16()? },
+            tag::CURSOR_SHAPE => Self::CursorShape {
                 shape: r.u16()?,
                 hot_x: r.u16()?,
                 hot_y: r.u16()?,
@@ -140,9 +145,9 @@ impl Message {
                 h: r.u16()?,
                 lz4: r.rest(),
             },
-            tag::KEYFRAME_REQUEST => Message::KeyframeRequest { screen: r.u8()? },
-            tag::PING => Message::Ping { t_us: r.u64()? },
-            tag::PONG => Message::Pong { t_us: r.u64()? },
+            tag::KEYFRAME_REQUEST => Self::KeyframeRequest { screen: r.u8()? },
+            tag::PING => Self::Ping { t_us: r.u64()? },
+            tag::PONG => Self::Pong { t_us: r.u64()? },
             t => return Err(DecodeError::UnknownType(t)),
         })
     }
@@ -177,9 +182,9 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
-        let s = self.b.get(self.i..self.i + N).ok_or(DecodeError::Truncated)?;
+        let (chunk, _) = self.b.get(self.i..).and_then(<[u8]>::split_first_chunk::<N>).ok_or(DecodeError::Truncated)?;
         self.i += N;
-        s.try_into().map_err(|_| DecodeError::Truncated)
+        Ok(*chunk)
     }
     fn u8(&mut self) -> Result<u8, DecodeError> {
         Ok(self.take::<1>()?[0])

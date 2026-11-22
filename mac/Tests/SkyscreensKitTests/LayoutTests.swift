@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import SkyscreensKit
@@ -11,7 +12,7 @@ struct LayoutTests {
     @Test(arguments: Array(stride(from: 12.0, through: 45.0, by: 0.5)))
     func everyScreenIsAMacroblockMultiple(ppd: Double) {
         for spec in Layout.standard(pixelsPerDegree: ppd) {
-            #expect(spec.width % Layout.macroblock == 0 && spec.height % Layout.macroblock == 0)
+            #expect(spec.width.isMultiple(of: Layout.macroblock) && spec.height.isMultiple(of: Layout.macroblock))
             #expect(spec.width >= Layout.macroblock && spec.height >= Layout.macroblock)
             #expect(spec.width <= Int(UInt16.max) && spec.height <= Int(UInt16.max))
         }

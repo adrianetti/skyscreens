@@ -7,7 +7,7 @@ struct StreamStats {
     var encodeMs: [Double] = []
     var roundTripMs: [Double] = []
 
-    mutating func add(_ other: StreamStats) {
+    mutating func add(_ other: Self) {
         frames += other.frames
         keyframes += other.keyframes
         bytes += other.bytes
@@ -15,10 +15,10 @@ struct StreamStats {
         roundTripMs += other.roundTripMs
     }
 
-    static func percentile(_ values: [Double], _ q: Double) -> Double {
+    static func percentile(_ values: [Double], _ quantile: Double) -> Double {
         let sorted = values.sorted()
         guard !sorted.isEmpty else { return .nan }
-        return sorted[min(sorted.count - 1, Int(q * Double(sorted.count)))]
+        return sorted[min(sorted.count - 1, Int(quantile * Double(sorted.count)))]
     }
 
     func line(connected: Bool, seconds: Double = 1) -> String {
@@ -33,8 +33,8 @@ struct StreamStats {
         )
     }
 
-    func summaryJSON(seconds: Double, connectedSeconds: Double = 0, everConnected: Bool) -> String {
-        func number(_ v: Double) -> String { v.isFinite ? String(format: "%.2f", v) : "null" }
+    func summaryJSON(seconds: Double, everConnected: Bool, connectedSeconds: Double = 0) -> String {
+        func number(_ value: Double) -> String { value.isFinite ? String(format: "%.2f", value) : "null" }
         let fields = [
             "\"connected\":\(everConnected)",
             "\"seconds\":\(number(seconds))",

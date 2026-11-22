@@ -58,7 +58,7 @@ public enum Layout {
         }
     }
 
-    static func roundToMacroblock(_ v: Double) -> Int {
-        max(macroblock, Int((v / Double(macroblock)).rounded()) * macroblock)
+    static func roundToMacroblock(_ value: Double) -> Int {
+        max(macroblock, Int((value / Double(macroblock)).rounded()) * macroblock)
     }
 }

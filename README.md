@@ -53,7 +53,7 @@ Next come a lossless LZ4 lane for text, a cursor drawn locally in the headset, 3
 | Typing latency over USB, full design, simulated | 21 ms p50 |
 | Quest 3 showing a 1616×1008 test screen | 90 FPS, about 1–2 ms of app time per frame |
 | Quest 3 hardware decoders | 16 H.264/HEVC instances, up to 8192×8192 |
-| Mac pipeline end to end, 1616×1008 test pattern, to a local fake headset (`scripts/eval.sh mac`, M2) | 57 fps, capture to received p50 8.8 ms, p95 12.9 ms |
+| Mac pipeline end to end, 1616×1008 test pattern, to a local fake headset (`scripts/eval.sh mac`, M2) | 57 fps, capture to received p50 8.0 ms, p95 12.9 ms |
 
 The numbers, their sources and the open questions are in [docs/architecture.md](docs/architecture.md#key-findings-and-the-decisions-they-drove).
 
@@ -95,7 +95,7 @@ Using an AI coding agent on this repo? Point it to [AGENTS.md](AGENTS.md). It co
 
 ## Contributing
 
-Contributions are welcome, especially tests on other Macs and headsets. Start with [CONTRIBUTING.md](CONTRIBUTING.md). To report a security problem, see [SECURITY.md](SECURITY.md).
+Contributions are welcome, especially tests on other Macs and headsets. Start with [CONTRIBUTING.md](CONTRIBUTING.md); the rules every change follows are in [docs/code-standards.md](docs/code-standards.md). To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 

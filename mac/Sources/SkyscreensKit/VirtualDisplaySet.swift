@@ -11,7 +11,7 @@ public enum DisplayError: Error, CustomStringConvertible {
         switch self {
         case .createFailed(let name): "could not create display \(name)"
         case .notReady(let names): "displays never got a mode: \(names.joined(separator: ", "))"
-        case .configFailed(let e): "display configuration failed (\(e.rawValue))"
+        case .configFailed(let error): "display configuration failed (\(error.rawValue))"
         }
     }
 }
@@ -30,16 +30,16 @@ public final class VirtualDisplaySet {
     public init(_ specs: [ScreenSpec]) throws {
         self.specs = specs
         for (i, spec) in specs.enumerated() {
-            let d = CGVirtualDisplayDescriptor()
-            d.queue = DispatchQueue.main
-            d.name = spec.name
-            d.maxPixelsWide = UInt32(spec.width)
-            d.maxPixelsHigh = UInt32(spec.height)
-            d.sizeInMillimeters = Self.physicalSize(spec)
-            d.vendorID = Self.vendorID
-            d.productID = Self.productID
-            d.serialNum = UInt32(i + 1)
-            guard let display = CGVirtualDisplay(descriptor: d),
+            let descriptor = CGVirtualDisplayDescriptor()
+            descriptor.queue = DispatchQueue.main
+            descriptor.name = spec.name
+            descriptor.maxPixelsWide = UInt32(spec.width)
+            descriptor.maxPixelsHigh = UInt32(spec.height)
+            descriptor.sizeInMillimeters = Self.physicalSize(spec)
+            descriptor.vendorID = Self.vendorID
+            descriptor.productID = Self.productID
+            descriptor.serialNum = UInt32(i + 1)
+            guard let display = CGVirtualDisplay(descriptor: descriptor),
                 display.apply(Self.settings(spec, refreshRate: spec.refreshRate))
             else {
                 throw DisplayError.createFailed(spec.name)
@@ -80,10 +80,12 @@ public final class VirtualDisplaySet {
     }
 
     private static func settings(_ spec: ScreenSpec, refreshRate: Double) -> CGVirtualDisplaySettings {
-        let s = CGVirtualDisplaySettings()
-        s.hiDPI = 0
-        s.modes = [CGVirtualDisplayMode(width: UInt(spec.width), height: UInt(spec.height), refreshRate: refreshRate)]
-        return s
+        let settings = CGVirtualDisplaySettings()
+        settings.hiDPI = 0
+        settings.modes = [
+            CGVirtualDisplayMode(width: UInt(spec.width), height: UInt(spec.height), refreshRate: refreshRate)
+        ]
+        return settings
     }
 
     static func builtInDisplay() -> CGDirectDisplayID {

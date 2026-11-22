@@ -1,16 +1,18 @@
+#![expect(unsafe_code, reason = "loading OpenXR and Vulkan and creating their handles is unsafe")]
+
 use crate::{Result, platform::Platform};
 use ash::vk::{self, Handle};
 use openxr as xr;
 use std::ptr;
 
-pub struct Runtime {
+pub(crate) struct Runtime {
     pub instance: xr::Instance,
     pub system: xr::SystemId,
     pub platform: Platform,
     _entry: xr::Entry,
 }
 
-pub struct Vulkan {
+pub(crate) struct Vulkan {
     pub instance: ash::Instance,
     pub physical_device: vk::PhysicalDevice,
     pub device: ash::Device,
@@ -18,7 +20,7 @@ pub struct Vulkan {
     _entry: ash::Entry,
 }
 
-const APP_INFO: xr::ApplicationInfo = xr::ApplicationInfo {
+const APP_INFO: xr::ApplicationInfo<'static> = xr::ApplicationInfo {
     application_name: "skyscreens",
     application_version: 1,
     engine_name: "skyscreens",
@@ -27,7 +29,7 @@ const APP_INFO: xr::ApplicationInfo = xr::ApplicationInfo {
 };
 
 impl Runtime {
-    pub fn create() -> Result<Runtime> {
+    pub(crate) fn create() -> Result<Self> {
         let entry = unsafe { xr::Entry::load()? };
         entry.initialize_android_loader()?;
         let available = entry.enumerate_extensions()?;
@@ -44,10 +46,10 @@ impl Runtime {
         log::info!("runtime: {} {}", props.runtime_name, props.runtime_version);
         let system = instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)?;
         instance.graphics_requirements::<xr::Vulkan>(system)?;
-        Ok(Runtime { instance, system, platform, _entry: entry })
+        Ok(Self { instance, system, platform, _entry: entry })
     }
 
-    pub fn create_vulkan(&self) -> Result<Vulkan> {
+    pub(crate) fn create_vulkan(&self) -> Result<Vulkan> {
         let entry = unsafe { ash::Entry::load()? };
         let get_proc = unsafe {
             std::mem::transmute::<vk::PFN_vkGetInstanceProcAddr, xr::sys::platform::VkGetInstanceProcAddr>(
@@ -62,7 +64,9 @@ impl Runtime {
         .map_err(vk::Result::from_raw)?;
         let instance = unsafe { ash::Instance::load(entry.static_fn(), vk::Instance::from_raw(raw_instance as u64)) };
 
-        let raw_pdev = unsafe { self.instance.vulkan_graphics_device(self.system, instance.handle().as_raw() as _)? };
+        let raw_pdev = unsafe {
+            self.instance.vulkan_graphics_device(self.system, instance.handle().as_raw() as *const std::ffi::c_void)?
+        };
         let physical_device = vk::PhysicalDevice::from_raw(raw_pdev as u64);
         let queue_family = unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
             .iter()
@@ -78,7 +82,7 @@ impl Runtime {
             self.instance.create_vulkan_device(
                 self.system,
                 get_proc,
-                physical_device.as_raw() as _,
+                physical_device.as_raw() as *const std::ffi::c_void,
                 ptr::from_ref(&device_info).cast(),
             )?
         }

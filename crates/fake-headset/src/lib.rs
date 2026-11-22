@@ -23,7 +23,7 @@ pub struct Headset {
 }
 
 impl Headset {
-    pub fn connect(addr: SocketAddr, timeout: Duration) -> io::Result<Headset> {
+    pub fn connect(addr: SocketAddr, timeout: Duration) -> io::Result<Self> {
         let deadline = Instant::now() + timeout;
         let stream = loop {
             match TcpStream::connect_timeout(&addr, timeout) {
@@ -38,7 +38,7 @@ impl Headset {
             let (s, w) = (sender.clone(), stream.try_clone()?);
             thread::spawn(move || s.pump(w))
         };
-        let headset = Headset {
+        let headset = Self {
             stream,
             sender,
             writer: Some(writer),

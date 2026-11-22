@@ -24,7 +24,7 @@ struct LosslessTileTests {
     func textLikeScreen() throws -> CVPixelBuffer {
         try #require(
             makeBGRABuffer(width: 64, height: 48) { x, y in
-                (x / 3 + y / 5) % 4 == 0 ? [20, 20, 20, 255] : [x < 32 ? 250 : 200, 248, 245, 255]
+                (x / 3 + y / 5).isMultiple(of: 4) ? [20, 20, 20, 255] : [x < 32 ? 250 : 200, 248, 245, 255]
             }
         )
     }

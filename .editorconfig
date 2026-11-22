@@ -13,3 +13,17 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.sh]
+indent_size = 2
+shell_variant = bash
+binary_next_line = true
+switch_case_indent = true
+space_redirects = true
+
+[scripts/hooks/*]
+indent_size = 2
+shell_variant = bash
+binary_next_line = true
+switch_case_indent = true
+space_redirects = true

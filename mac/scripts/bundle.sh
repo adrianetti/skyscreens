@@ -7,7 +7,7 @@ APP=.build/Skyscreens.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/skyscreens .build/release/skyscreens-displays "$APP/Contents/MacOS/"
-cat > "$APP/Contents/Info.plist" <<PLIST
+cat > "$APP/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -23,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-identity() { security find-identity -p codesigning 2>/dev/null | awk '/Apple Development|Skyscreens/ && !n++ { print $2 }' || true; }
+identity() { security find-identity -p codesigning 2> /dev/null | awk '/Apple Development|Skyscreens/ && !n++ { print $2 }' || true; }
 SIGN="${SKYSCREENS_SIGN_ID:-$(identity)}"
 if [[ -z "$SIGN" ]]; then
   SIGN=-

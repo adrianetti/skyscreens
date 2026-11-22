@@ -5,18 +5,29 @@ default-members = ["crates/link", "crates/fake-headset"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.94"
 license = "MIT"
 repository = "https://github.com/adrianetti/skyscreens"
 
 [workspace.lints.rust]
+unsafe_code = "deny"
+renamed_and_removed_lints = "deny"
+unknown_lints = "deny"
 unsafe_op_in_unsafe_fn = "deny"
-unused_qualifications = "warn"
-missing_debug_implementations = "warn"
+unreachable_pub = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unused_lifetimes = "deny"
+redundant_lifetimes = "deny"
+unit_bindings = "deny"
+non_ascii_idents = "deny"
+unused_qualifications = "deny"
+missing_debug_implementations = "deny"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 missing_safety_doc = "allow"
@@ -24,13 +35,37 @@ must_use_candidate = "allow"
 module_name_repetitions = "allow"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
-dbg_macro = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
 todo = "deny"
 unimplemented = "deny"
+dbg_macro = "deny"
+exit = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
-exit = "deny"
 mem_forget = "deny"
+rc_mutex = "deny"
+mutex_integer = "deny"
+map_err_ignore = "deny"
+float_cmp_const = "deny"
+lossy_float_literal = "deny"
+as_underscore = "deny"
+wildcard_enum_match_arm = "deny"
+shadow_unrelated = "deny"
+clone_on_ref_ptr = "deny"
+missing_assert_message = "deny"
+multiple_unsafe_ops_per_block = "deny"
+significant_drop_tightening = "deny"
+significant_drop_in_scrutinee = "deny"
+use_self = "deny"
+or_fun_call = "deny"
+cognitive_complexity = "deny"
+verbose_file_reads = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+if_then_some_else_none = "deny"
+empty_drop = "deny"
+infinite_loop = "deny"
 
 [profile.release]
 lto = true
