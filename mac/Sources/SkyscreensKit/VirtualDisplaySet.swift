@@ -73,9 +73,9 @@ public final class VirtualDisplaySet {
 
     private func mirror(_ index: Int, onto target: CGDirectDisplayID) throws {
         var config: CGDisplayConfigRef?
-        CGBeginDisplayConfiguration(&config)
-        CGConfigureDisplayMirrorOfDisplay(config, ids[index], target)
-        let err = CGCompleteDisplayConfiguration(config, .forSession)
+        unsafe CGBeginDisplayConfiguration(&config)
+        unsafe CGConfigureDisplayMirrorOfDisplay(config, ids[index], target)
+        let err = unsafe CGCompleteDisplayConfiguration(config, .forSession)
         if err != .success { throw DisplayError.configFailed(err) }
     }
 
@@ -90,9 +90,9 @@ public final class VirtualDisplaySet {
 
     static func builtInDisplay() -> CGDirectDisplayID {
         var count: UInt32 = 0
-        CGGetOnlineDisplayList(0, nil, &count)
+        unsafe CGGetOnlineDisplayList(0, nil, &count)
         var list = [CGDirectDisplayID](repeating: 0, count: Int(count))
-        CGGetOnlineDisplayList(count, &list, &count)
+        unsafe CGGetOnlineDisplayList(count, &list, &count)
         return list.first { CGDisplayIsBuiltin($0) != 0 } ?? CGMainDisplayID()
     }
 }

@@ -35,11 +35,11 @@ impl Shared {
         self.request_keyframe();
     }
 
-    fn send(&self, m: &Message) {
-        if let Some(s) = lock(&self.sender).as_ref()
-            && let Err(e) = s.send(channel::HEADSET_CONTROL, Priority::Control, m)
+    fn send(&self, message: &Message) {
+        if let Some(sender) = lock(&self.sender).as_ref()
+            && let Err(error) = sender.send(channel::HEADSET_CONTROL, Priority::Control, message)
         {
-            log::warn!("send: {e}");
+            log::warn!("send: {error}");
         }
     }
 
@@ -51,7 +51,7 @@ impl Shared {
 
     fn keyframe_request_due(&self) -> bool {
         let mut last = lock(&self.last_request);
-        let due = last.is_none_or(|t| t.elapsed() > KEYFRAME_REQUEST_INTERVAL);
+        let due = last.is_none_or(|sent| sent.elapsed() > KEYFRAME_REQUEST_INTERVAL);
         if due {
             *last = Some(Instant::now());
         }
@@ -70,16 +70,16 @@ impl Shared {
                 return self.request_keyframe();
             }
             match Decoder::new(w, *width, *height, data, self.pong_sender()) {
-                Ok(d) => *decoder = Some(d),
-                Err(e) => return log::error!("decoder: {e}"),
+                Ok(started) => *decoder = Some(started),
+                Err(error) => return log::error!("decoder: {error}"),
             }
         }
         let Some(active) = decoder.as_ref() else { return };
         match active.feed(data, pts_us) {
             Ok(true) => {}
             Ok(false) => log::warn!("decoder busy, frame dropped"),
-            Err(e) => {
-                log::error!("decode: {e}");
+            Err(error) => {
+                log::error!("decode: {error}");
                 *decoder = None;
             }
         }
@@ -104,8 +104,8 @@ fn reconnect_forever(shared: &Arc<Shared>, screens: &mpsc::Sender<Vec<Screen>>) 
     loop {
         if let Ok(stream) = TcpStream::connect(("127.0.0.1", DEFAULT_PORT)) {
             log::info!("connected to the Mac");
-            if let Err(e) = session(stream, shared, screens) {
-                log::warn!("connection: {e}");
+            if let Err(error) = session(stream, shared, screens) {
+                log::warn!("connection: {error}");
             }
             log::info!("disconnected");
             *lock(&shared.decoder) = None;
@@ -120,13 +120,17 @@ fn session(stream: TcpStream, shared: &Arc<Shared>, screens: &mpsc::Sender<Vec<S
     sender.send(channel::HEADSET_CONTROL, Priority::Control, &hello())?;
     *lock(&shared.sender) = Some(sender.clone());
     let writer = {
-        let (s, w) = (sender.clone(), stream.try_clone()?);
-        std::thread::spawn(move || s.pump(w))
+        let (pumping, socket) = (sender.clone(), stream.try_clone()?);
+        std::thread::spawn(move || pumping.pump(socket))
     };
     let result = receive(stream, shared, screens);
     sender.close();
     *lock(&shared.sender) = None;
-    let _ = writer.join();
+    match writer.join() {
+        Ok(Err(error)) => log::info!("writer stopped: {error}"),
+        Err(_) => log::error!("writer thread panicked"),
+        Ok(Ok(())) => {}
+    }
     result
 }
 
@@ -138,10 +142,12 @@ fn receive(mut stream: TcpStream, shared: &Arc<Shared>, screens: &mpsc::Sender<V
         if n == 0 {
             return Ok(());
         }
-        for m in reassembler.feed(&buf[..n])? {
-            match m {
-                Message::Screens(s) => {
-                    let _ = screens.send(s);
+        for message in reassembler.feed(&buf[..n])? {
+            match message {
+                Message::Screens(list) => {
+                    if let Err(error) = screens.send(list) {
+                        log::warn!("frame loop is gone: {error}");
+                    }
                 }
                 Message::Video { screen: 0, key, pts_us, data } => shared.on_video(key, pts_us, &data),
                 Message::Hello { .. }
@@ -167,6 +173,6 @@ fn hello() -> Message {
     }
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

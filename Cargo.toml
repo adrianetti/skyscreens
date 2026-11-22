@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/link", "crates/fake-headset", "xr"]
-default-members = ["crates/link", "crates/fake-headset"]
+members = ["crates/link", "crates/link-helper", "crates/fake-headset", "xr"]
+default-members = ["crates/link", "crates/link-helper", "crates/fake-headset"]
 
 [workspace.package]
 edition = "2024"
@@ -66,6 +66,10 @@ rest_pat_in_fully_bound_structs = "deny"
 if_then_some_else_none = "deny"
 empty_drop = "deny"
 infinite_loop = "deny"
+min_ident_chars = "deny"
+as_conversions = "deny"
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
 
 [profile.release]
 lto = true

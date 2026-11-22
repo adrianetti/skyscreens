@@ -29,7 +29,7 @@ fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Info).with_tag("skyscreens"),
     );
-    if let Err(e) = app::run(&app) {
-        log::error!("fatal: {e}");
+    if let Err(error) = app::run(&app) {
+        log::error!("fatal: {error}");
     }
 }

@@ -8,20 +8,21 @@ RUFF=ruff@0.17.6
 MYPY=mypy@1.18.2
 ZIZMOR=zizmor@1.33.0
 MIN_COVERAGE=85
+MUTANTS_ONLY_TIMEOUTS=3
 SWIFT_SOURCES=(mac/Package.swift mac/Sources mac/Tests bench)
 SHELL_SCRIPTS=(scripts/*.sh scripts/hooks/* mac/scripts/*.sh xr/build.sh)
-HEADER=mac/Sources/CLink/include/link.h
 
 usage() {
   cat >&2 << 'USAGE'
 usage: scripts/check.sh [all | fast | rust | android | swift | scripts | fix]
   all      every check; what CI runs, and the bar for calling a change done
   fast     formatting, lints and Rust tests; the pre-commit hook
-  rust     format, clippy, tests, coverage, C header drift, dependency policy
+  rust     format, clippy, tests, coverage, dependency policy, unused dependencies
   android  clippy for the headset target, then the APK build
   swift    format, SwiftLint, Swift 6 build with warnings as errors, tests, bench typecheck
-  scripts  limits, no comments, spelling, Python, shell and workflow linters
-  fix      apply every formatter and regenerate the C header
+  scripts  limits, no comments, escape-hatch ledger, spelling, Python, shell and workflow linters
+  mutants  mutation testing of the protocol crates; a surviving mutant means a missing test
+  fix      apply every formatter
 USAGE
   exit 2
 }
@@ -42,14 +43,12 @@ need() {
   done
 }
 uvtool() { uvx -q "$@"; }
-header() {
-  cbindgen --quiet --config crates/link/cbindgen.toml crates/link/src/ffi.rs
-}
 
 check_scripts() {
   need uvx typos shfmt shellcheck actionlint
   run "file limits and whitespace" python3 scripts/limits.py
   run "code has no comments" python3 scripts/comments.py
+  run "escape hatches match escape-hatches.json" python3 scripts/escape_hatches.py
   run "spelling" typos
   run "script tests" python3 -m unittest discover -s scripts -p 'test_*.py' -q
   run "python format" uvtool "$RUFF" format --check --quiet .
@@ -66,21 +65,25 @@ check_rust_lint() {
   run "rust clippy" cargo clippy --workspace --all-targets --locked -- -D warnings
 }
 
-header_is_current() {
-  local generated
-  generated="$(header)"
-  diff -u "$HEADER" <(printf '%s\n' "$generated") || fail "link.h is stale; run scripts/check.sh fix"
-}
-
 check_rust() {
-  need cargo-llvm-cov cargo-deny cargo-shear cbindgen
+  need cargo-llvm-cov cargo-deny cargo-shear
   check_rust_lint
   run "rust tests, at least ${MIN_COVERAGE}% line coverage" \
     cargo llvm-cov --workspace --exclude xr --locked --fail-under-lines "$MIN_COVERAGE" --summary-only
   run "headset logic tests" cargo test -p xr --locked
-  run "C header matches crates/link/src/ffi.rs" header_is_current
   run "dependency policy" cargo deny --log-level error check
   run "unused dependencies" cargo shear
+}
+
+mutants_all_caught() {
+  local code=0
+  cargo mutants -p link -p link-helper --test-workspace=true --jobs 4 --timeout 30 --output target/mutants || code=$?
+  [[ $code -eq 0 || $code -eq "$MUTANTS_ONLY_TIMEOUTS" ]] || fail "a mutant survived; see target/mutants/mutants.out/missed.txt"
+}
+
+check_mutants() {
+  need cargo-mutants
+  run "mutation testing: every mutant of the protocol crates is caught (a hang counts as caught)" mutants_all_caught
 }
 
 check_android() {
@@ -100,6 +103,10 @@ typecheck_bench() {
   done
 }
 
+swift_coverage() {
+  python3 scripts/swift_coverage.py "$(swift test --package-path mac --show-codecov-path)"
+}
+
 check_swift_style() {
   need swift swiftlint
   run "swift format" swift format lint --strict --recursive --parallel "${SWIFT_SOURCES[@]}"
@@ -108,9 +115,9 @@ check_swift_style() {
 
 check_swift() {
   check_swift_style
-  run "link static library" cargo build --release -p link --locked
   run "swift 6 build, warnings are errors" swift build --package-path mac --build-tests -Xswiftc -warnings-as-errors
-  run "swift tests" swift test --package-path mac --skip-build
+  run "swift tests with coverage" swift test --package-path mac --enable-code-coverage
+  run "swift coverage of pure logic, at least 90%" swift_coverage
   run "bench scripts typecheck" typecheck_bench
 }
 
@@ -120,7 +127,6 @@ fix() {
   uvtool "$RUFF" format --quiet .
   uvtool "$RUFF" check --fix --exit-zero --quiet .
   shfmt -w "${SHELL_SCRIPTS[@]}"
-  header > "$HEADER"
 }
 
 target="${1:-all}"
@@ -137,7 +143,7 @@ case "$target" in
     check_swift_style
     run "rust tests" cargo test --workspace --locked
     ;;
-  rust | android | swift | scripts) "check_$target" ;;
+  rust | android | swift | scripts | mutants) "check_$target" ;;
   fix) fix ;;
   *) usage ;;
 esac

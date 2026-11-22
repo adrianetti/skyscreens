@@ -1,12 +1,11 @@
 import AppKit
-import CLink
 import CoreMedia
 import Foundation
 import QuartzCore
 
 @MainActor
 public final class Streamer {
-    public static let port = UInt16(SK_DEFAULT_PORT)
+    public static let port: UInt16 = 7243
     static let questApp = "io.github.adrianetti.skyscreens/android.app.NativeActivity"
     static let fps = 60.0
     static let bitrate = 15_000_000
@@ -15,20 +14,20 @@ public final class Streamer {
 
     private let options: StreamOptions
     private let screen: Session.Screen
-    private let server: LinkServer
+    private let link: LinkHelper
     private let pipeline: FramePipeline
     private let capture = ScreenCapture()
     private let movingBar = MovingBar()
     private var connection = ConnectionTracker()
+    private var signalSources: [any DispatchSourceSignal] = []
     private let started = CACurrentMediaTime()
 
     public init(options: StreamOptions = StreamOptions()) throws {
         self.options = options
         _ = try Session.on(count: 1)
         guard let screen = Session.screens().first else { throw Session.SessionError.helperFailed("no screens") }
-        guard let server = LinkServer.start(port: Self.port) else {
-            throw Session.SessionError.helperFailed("port \(Self.port) is busy")
-        }
+        let relay = EventRelay()
+        let link = try LinkHelper(port: Self.port, onEvent: relay.forward)
         let encoder = try VideoEncoder(
             width: screen.spec.width,
             height: screen.spec.height,
@@ -36,10 +35,11 @@ public final class Streamer {
             bitrate: Self.bitrate
         )
         self.screen = screen
-        self.server = server
-        pipeline = FramePipeline(server: server, encoder: encoder, fps: Self.fps)
-        server.announce(screen.spec)
-        server.deliverEvents(to: pipeline)
+        self.link = link
+        let pipeline = FramePipeline(link: link, encoder: encoder, fps: Self.fps)
+        self.pipeline = pipeline
+        relay.connect(pipeline.onLinkEvent)
+        _ = link.announce([screen.spec])
     }
 
     public func run() -> Never {
@@ -77,7 +77,7 @@ public final class Streamer {
                 MainActor.assumeIsolated { self?.finish() }
             }
             source.resume()
-            _ = Unmanaged.passRetained(source)
+            signalSources.append(source)
         }
     }
 
@@ -120,13 +120,13 @@ public final class Streamer {
     }
 
     private func pollConnection() {
-        if connection.observe(connected: server.isConnected, after: Self.connectionPoll) {
+        if connection.observe(connected: link.isConnected, after: Self.connectionPoll) {
             pipeline.resendKeyframe()
         }
     }
 
     private func report() {
-        print(pipeline.takeInterval().line(connected: server.isConnected))
+        print(pipeline.takeInterval().line(connected: link.isConnected))
     }
 
     private func finish() -> Never {
@@ -139,6 +139,7 @@ public final class Streamer {
             )
         )
         capture.onStop = nil
+        link.stop()
         Session.off()
         exit(0)
     }

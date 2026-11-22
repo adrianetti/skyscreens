@@ -27,7 +27,7 @@ skyscreens adds virtual displays to your Mac and streams them to the headset, wh
 1. A small helper process creates virtual displays with `CGVirtualDisplay`. macOS treats them like plugged-in monitors.
 2. ScreenCaptureKit captures a display only when something on it changes.
 3. VideoToolbox encodes H.264 in low-latency mode on the Mac's media engine.
-4. The `link` crate (Rust, shared by both apps) splits each frame into prioritized fragments and sends them over TCP. Over USB, `adb reverse` carries that connection.
+4. The Mac app hands each frame over a pipe to `skyscreens-link`, a small Rust helper. Its `link` crate, shared with the headset, splits the frame into prioritized fragments and sends them over TCP. Over USB, `adb reverse` carries that connection.
 5. The headset app decodes with MediaCodec straight into an OpenXR surface layer. The compositor shows the newest frame over passthrough.
 6. The headset sends back each decoded frame's timestamp, and the Mac prints the round trip.
 
@@ -82,7 +82,8 @@ mac/scripts/run.sh stream          # streams one screen to the plugged-in Quest
 | Path | What's there |
 |---|---|
 | [`mac/`](mac) | Swift package: the `skyscreens` CLI, the `skyscreens-displays` helper, capture, encoding, the streamer |
-| [`crates/link/`](crates/link) | Rust: the wire format, priority sender, reassembler, Mac server, and the C interface for the Mac app |
+| [`crates/link/`](crates/link) | Rust: the wire format, priority sender, reassembler and Mac server, shared with the headset |
+| [`crates/link-helper/`](crates/link-helper) | Rust: `skyscreens-link`, the Mac helper process that owns the headset connection |
 | [`crates/fake-headset/`](crates/fake-headset) | Rust: a headless stand-in for the headset, used by tests and evals |
 | [`scripts/`](scripts) | The check gate, the evals, the git hooks |
 | [`xr/`](xr) | Rust: the headset app (OpenXR, Vulkan, MediaCodec), built into an APK without Gradle |
@@ -91,7 +92,7 @@ mac/scripts/run.sh stream          # streams one screen to the plugged-in Quest
 
 ## For AI agents
 
-Using an AI coding agent on this repo? Point it to [AGENTS.md](AGENTS.md). It covers the commands, the code standards, and the pitfalls already found. Its definition of done is a command the agent can run itself: `scripts/check.sh`, plus `scripts/eval.sh` for the parts a change touches. Agents that are only researching the project can start from [llms.txt](llms.txt), a short index of everything here.
+Using an AI coding agent on this repo? Point it to [AGENTS.md](AGENTS.md). It covers the commands, the code standards, and the pitfalls already found. Its definition of done is a command the agent can run itself: `scripts/check.sh`, plus `scripts/eval.sh` for the parts a change touches. The checks are built so an agent cannot quietly weaken them: every escape hatch is counted in `escape-hatches.json`, rule files need the maintainer's approval, and mutation testing catches tests that check nothing. See [docs/code-standards.md](docs/code-standards.md). Agents that are only researching the project can start from [llms.txt](llms.txt), a short index of everything here.
 
 ## Contributing
 

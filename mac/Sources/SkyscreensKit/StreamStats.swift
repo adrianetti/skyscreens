@@ -22,19 +22,17 @@ struct StreamStats {
     }
 
     func line(connected: Bool, seconds: Double = 1) -> String {
-        String(
-            format: "%@  %2d fps  %5.1f Mbps  encode %4.1f ms  capture->decoded on Quest p50 %5.1f  p95 %5.1f ms",
-            connected ? "connected   " : "waiting...  ",
-            frames,
-            Double(bytes) * 8 / 1e6 / seconds,
-            Self.percentile(encodeMs, 0.5),
-            Self.percentile(roundTripMs, 0.5),
-            Self.percentile(roundTripMs, 0.95)
-        )
+        let state = connected ? "connected   " : "waiting...  "
+        let mbps = FixedFormat.decimal(Double(bytes) * 8 / 1e6 / seconds, places: 1, width: 5)
+        let encode = FixedFormat.decimal(Self.percentile(encodeMs, 0.5), places: 1, width: 4)
+        let p50 = FixedFormat.decimal(Self.percentile(roundTripMs, 0.5), places: 1, width: 5)
+        let p95 = FixedFormat.decimal(Self.percentile(roundTripMs, 0.95), places: 1, width: 5)
+        return "\(state)\(FixedFormat.integer(frames, width: 2)) fps  \(mbps) Mbps  encode \(encode) ms  "
+            + "capture->decoded on Quest p50 \(p50)  p95 \(p95) ms"
     }
 
     func summaryJSON(seconds: Double, everConnected: Bool, connectedSeconds: Double = 0) -> String {
-        func number(_ value: Double) -> String { value.isFinite ? String(format: "%.2f", value) : "null" }
+        func number(_ value: Double) -> String { value.isFinite ? FixedFormat.decimal(value, places: 2) : "null" }
         let fields = [
             "\"connected\":\(everConnected)",
             "\"seconds\":\(number(seconds))",

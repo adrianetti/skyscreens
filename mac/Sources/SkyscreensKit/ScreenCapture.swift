@@ -51,12 +51,14 @@ public final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate, @u
         lock.withLock { activeStream = stream }
     }
 
+    static let sRGBName = "kCGColorSpaceSRGB"
+
     static func configuration(width: Int, height: Int, fps: Double) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
         config.width = width
         config.height = height
         config.pixelFormat = kCVPixelFormatType_32BGRA
-        config.colorSpaceName = CGColorSpace.sRGB
+        unsafe config.colorSpaceName = Self.sRGBName as CFString
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps.rounded()))
         config.queueDepth = 3
         config.showsCursor = false

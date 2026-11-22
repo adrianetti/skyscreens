@@ -23,8 +23,9 @@ CI runs the same script on every pull request. If your change affects capture, e
 
 - **Measure first.** Performance claims need numbers from `skyscreens stream`, `skyscreens probe` or `bench/`, with the hardware they came from.
 - **Keep it small.** Small, focused pull requests, direct code, few dependencies.
-- **Code standards.** No comments in code, size limits, strict lints, a test for every behavior change. [docs/code-standards.md](docs/code-standards.md) lists every rule and its source, and `scripts/check.sh` enforces them.
-- **Protocol changes** go in `crates/link/src/message.rs`, with a round-trip test and a `PROTOCOL_VERSION` bump if older apps can't read the new format. `mac/Sources/CLink/include/link.h` is generated from `crates/link/src/ffi.rs`. Run `scripts/check.sh fix` after changing it.
+- **Code standards.** No comments in code, size limits, strict lints, no `unsafe` on the Mac side, a test for every behavior change. [docs/code-standards.md](docs/code-standards.md) lists every rule and its source, and `scripts/check.sh` enforces them.
+- **Escape hatches need approval.** A new `unsafe` block, lint exception or rule change shows up in `escape-hatches.json`. Explain it in the pull request; the maintainer regenerates the ledger if it is accepted.
+- **Protocol changes** go in `crates/link/src/message.rs`, with a round-trip test and a `PROTOCOL_VERSION` bump if older apps can't read the new format. Bridge changes between Swift and `skyscreens-link` update `crates/link-helper/tests/vectors.json`, which both sides test.
 - **Headset code** is plain OpenXR and Vulkan. Vendor-specific code goes in `xr/src/platform.rs` and is chosen by detected extensions, never by device name.
 - **Commit messages** are one line in [Conventional Commits](https://www.conventionalcommits.org) style: `feat(xr): decode into AImageReader`, `fix(mac): …`, `docs: …`.
 

@@ -3,6 +3,7 @@
 use crate::{Result, platform::Platform};
 use ash::vk::{self, Handle};
 use openxr as xr;
+use std::ffi::c_void;
 use std::ptr;
 
 pub(crate) struct Runtime {
@@ -62,15 +63,15 @@ impl Runtime {
             self.instance.create_vulkan_instance(self.system, get_proc, ptr::from_ref(&instance_info).cast())?
         }
         .map_err(vk::Result::from_raw)?;
-        let instance = unsafe { ash::Instance::load(entry.static_fn(), vk::Instance::from_raw(raw_instance as u64)) };
+        let instance =
+            unsafe { ash::Instance::load(entry.static_fn(), vk::Instance::from_raw(handle_of(raw_instance)?)) };
 
-        let raw_pdev = unsafe {
-            self.instance.vulkan_graphics_device(self.system, instance.handle().as_raw() as *const std::ffi::c_void)?
-        };
-        let physical_device = vk::PhysicalDevice::from_raw(raw_pdev as u64);
+        let raw_pdev =
+            unsafe { self.instance.vulkan_graphics_device(self.system, pointer_to(instance.handle().as_raw())?)? };
+        let physical_device = vk::PhysicalDevice::from_raw(handle_of(raw_pdev)?);
         let queue_family = unsafe { instance.get_physical_device_queue_family_properties(physical_device) }
             .iter()
-            .position(|q| q.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+            .position(|family| family.queue_flags.contains(vk::QueueFlags::GRAPHICS))
             .ok_or("no graphics queue")?;
         let queue_family = u32::try_from(queue_family)?;
 
@@ -82,12 +83,20 @@ impl Runtime {
             self.instance.create_vulkan_device(
                 self.system,
                 get_proc,
-                physical_device.as_raw() as *const std::ffi::c_void,
+                pointer_to(physical_device.as_raw())?,
                 ptr::from_ref(&device_info).cast(),
             )?
         }
         .map_err(vk::Result::from_raw)?;
-        let device = unsafe { ash::Device::load(instance.fp_v1_0(), vk::Device::from_raw(raw_device as u64)) };
+        let device = unsafe { ash::Device::load(instance.fp_v1_0(), vk::Device::from_raw(handle_of(raw_device)?)) };
         Ok(Vulkan { instance, physical_device, device, queue_family, _entry: entry })
     }
+}
+
+pub(crate) fn pointer_to(handle: u64) -> Result<*const c_void> {
+    Ok(ptr::with_exposed_provenance(usize::try_from(handle)?))
+}
+
+pub(crate) fn handle_of(pointer: *const c_void) -> Result<u64> {
+    Ok(u64::try_from(pointer.expose_provenance())?)
 }

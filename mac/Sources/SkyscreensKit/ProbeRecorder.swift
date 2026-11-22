@@ -14,7 +14,6 @@ final class ProbeRecorder: @unchecked Sendable {
     }
 
     static let whiteThreshold: UInt8 = 128
-    static let bytesPerPixel = 4
 
     private let encoder: VideoEncoder
     private let hz: Double
@@ -73,11 +72,7 @@ final class ProbeRecorder: @unchecked Sendable {
     }
 
     static func pixelIsWhite(_ buffer: CVPixelBuffer, x: Int, y: Int) -> Bool {
-        CVPixelBufferLockBaseAddress(buffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return false }
-        let offset = y * CVPixelBufferGetBytesPerRow(buffer) + x * bytesPerPixel
-        return base.load(fromByteOffset: offset, as: UInt8.self) > whiteThreshold
+        (PixelMemory.firstByte(of: buffer, x: x, y: y) ?? 0) > whiteThreshold
     }
 
     func report() -> String {
@@ -87,33 +82,27 @@ final class ProbeRecorder: @unchecked Sendable {
 
     static func summary(_ samples: Samples, hz: Double) -> String {
         let pct = StreamStats.percentile
+        let ms = { (values: [Double], quantile: Double, places: Int) in
+            FixedFormat.decimal(pct(values, quantile), places: places, width: 5)
+        }
         var fps = 0.0
         if let first = samples.frameTimes.first, let last = samples.frameTimes.last, last > first {
             fps = Double(samples.frameTimes.count - 1) / (last - first)
         }
         let medianBytes = samples.tileBytes.sorted()[safe: samples.tileBytes.count / 2] ?? 0
-        return String(
-            format: """
-                virtual display %dx%d @ %.0f Hz, %d flips measured
-                  change -> captured frame:   p50 %5.1f  p99 %5.1f ms
-                  H.264 encode:               p50 %5.1f  p99 %5.1f ms
-                  lossless tile (LZ4):        p50 %5.2f  p99 %5.2f ms, %d bytes p50, dirty area %.1f%% of screen
-                  frames delivered in motion: %.1f fps
-                """,
-            Probe.size.width,
-            Probe.size.height,
-            hz,
-            samples.captureMs.count,
-            pct(samples.captureMs, 0.5),
-            pct(samples.captureMs, 0.99),
-            pct(samples.encodeMs, 0.5),
-            pct(samples.encodeMs, 0.99),
-            pct(samples.tileMs, 0.5),
-            pct(samples.tileMs, 0.99),
-            medianBytes,
-            pct(samples.dirtyPercent, 0.5),
-            fps
-        )
+        let size = "\(Probe.size.width)x\(Probe.size.height)"
+        let dirty = FixedFormat.decimal(pct(samples.dirtyPercent, 0.5), places: 1)
+        let rate = FixedFormat.decimal(hz, places: 0)
+        let capture = "p50 \(ms(samples.captureMs, 0.5, 1))  p99 \(ms(samples.captureMs, 0.99, 1)) ms"
+        let encode = "p50 \(ms(samples.encodeMs, 0.5, 1))  p99 \(ms(samples.encodeMs, 0.99, 1)) ms"
+        let tile = "p50 \(ms(samples.tileMs, 0.5, 2))  p99 \(ms(samples.tileMs, 0.99, 2)) ms"
+        return [
+            "virtual display \(size) @ \(rate) Hz, \(samples.captureMs.count) flips measured",
+            "  change -> captured frame:   \(capture)",
+            "  H.264 encode:               \(encode)",
+            "  lossless tile (LZ4):        \(tile), \(medianBytes) bytes p50, dirty area \(dirty)% of screen",
+            "  frames delivered in motion: \(FixedFormat.decimal(fps, places: 1)) fps",
+        ].joined(separator: "\n")
     }
 }
 

@@ -1,8 +1,9 @@
+#![forbid(unsafe_code)]
+
 use link::{
     Message, PROTOCOL_VERSION, Priority, Reassembler, Screen, SendError, Sender, TCP_FRAGMENT, annexb, channel,
 };
 use std::collections::VecDeque;
-use std::fmt::Write as _;
 use std::io::{self, ErrorKind, Read};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::thread::{self, JoinHandle};
@@ -27,16 +28,16 @@ impl Headset {
         let deadline = Instant::now() + timeout;
         let stream = loop {
             match TcpStream::connect_timeout(&addr, timeout) {
-                Ok(s) => break s,
-                Err(e) if Instant::now() >= deadline => return Err(e),
+                Ok(connected) => break connected,
+                Err(error) if Instant::now() >= deadline => return Err(error),
                 Err(_) => thread::sleep(RETRY_DELAY),
             }
         };
         stream.set_nodelay(true)?;
         let sender = Sender::new(TCP_FRAGMENT);
         let writer = {
-            let (s, w) = (sender.clone(), stream.try_clone()?);
-            thread::spawn(move || s.pump(w))
+            let (pumping, socket) = (sender.clone(), stream.try_clone()?);
+            thread::spawn(move || pumping.pump(socket))
         };
         let headset = Self {
             stream,
@@ -50,35 +51,37 @@ impl Headset {
         Ok(headset)
     }
 
-    pub fn send(&self, m: &Message) -> Result<(), SendError> {
-        self.sender.send(channel::HEADSET_CONTROL, Priority::Control, m)
+    pub fn send(&self, message: &Message) -> Result<(), SendError> {
+        self.sender.send(channel::HEADSET_CONTROL, Priority::Control, message)
     }
 
     pub fn recv(&mut self, timeout: Duration) -> io::Result<Option<Message>> {
-        if let Some(m) = self.inbox.pop_front() {
-            return Ok(Some(m));
+        if let Some(message) = self.inbox.pop_front() {
+            return Ok(Some(message));
         }
         self.stream.set_read_timeout(Some(timeout.max(Duration::from_millis(1))))?;
         match self.stream.read(&mut self.buf) {
             Ok(0) => Err(ErrorKind::ConnectionAborted.into()),
             Ok(n) => {
-                let messages =
-                    self.reassembler.feed(&self.buf[..n]).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
+                let messages = self
+                    .reassembler
+                    .feed(&self.buf[..n])
+                    .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
                 self.inbox.extend(messages);
                 Ok(self.inbox.pop_front())
             }
-            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => Ok(None),
-            Err(e) => Err(e),
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => Ok(None),
+            Err(error) => Err(error),
         }
     }
 
     pub fn recv_until(&mut self, timeout: Duration, wanted: impl Fn(&Message) -> bool) -> io::Result<Option<Message>> {
         let deadline = Instant::now() + timeout;
         while let Some(left) = deadline.checked_duration_since(Instant::now()) {
-            if let Some(m) = self.recv(left.min(POLL))?
-                && wanted(&m)
+            if let Some(message) = self.recv(left.min(POLL))?
+                && wanted(&message)
             {
-                return Ok(Some(m));
+                return Ok(Some(message));
             }
         }
         Ok(None)
@@ -88,9 +91,9 @@ impl Headset {
 impl Drop for Headset {
     fn drop(&mut self) {
         self.sender.close();
-        let _ = self.stream.shutdown(Shutdown::Both);
-        if let Some(w) = self.writer.take() {
-            let _ = w.join();
+        let _already_closed = self.stream.shutdown(Shutdown::Both);
+        if let Some(writer) = self.writer.take() {
+            let _writer_result = writer.join();
         }
     }
 }
@@ -133,12 +136,15 @@ impl Report {
         let screens: Vec<String> = self
             .screens
             .iter()
-            .map(|s| format!(r#"{{"id":{},"role":"{:?}","width":{},"height":{}}}"#, s.id, s.role, s.width, s.height))
+            .map(|screen| {
+                format!(
+                    r#"{{"id":{},"role":"{:?}","width":{},"height":{}}}"#,
+                    screen.id, screen.role, screen.width, screen.height
+                )
+            })
             .collect();
-        let errors: Vec<String> = self.errors.iter().map(|e| format!("{e:?}")).collect();
-        let mut out = String::new();
-        let _ = write!(
-            out,
+        let errors: Vec<String> = self.errors.iter().map(|error| format!("{error:?}")).collect();
+        format!(
             r#"{{"passed":{},"screens":[{}],"frames":{},"keyframes":{},"bytes":{},"first_frame_ms":{},"keyframe_response_ms":{},"errors":[{}]}}"#,
             self.passed(),
             screens.join(","),
@@ -148,8 +154,7 @@ impl Report {
             json_number(self.first_frame_ms),
             json_number(self.keyframe_response_ms),
             errors.join(","),
-        );
-        out
+        )
     }
 
     fn on_video(&mut self, key: bool, data: &[u8], since_connect: Duration) {
@@ -173,9 +178,10 @@ impl Report {
         if self.screens.is_empty() {
             self.errors.push("no screen list received".into());
         }
-        for s in &self.screens {
-            if s.width == 0 || s.height == 0 || s.width % ALIGNMENT != 0 || s.height % ALIGNMENT != 0 {
-                self.errors.push(format!("screen {} is {}x{}, not a non-zero multiple of 16", s.id, s.width, s.height));
+        for screen in &self.screens {
+            let (width, height) = (screen.width, screen.height);
+            if width == 0 || height == 0 || width % ALIGNMENT != 0 || height % ALIGNMENT != 0 {
+                self.errors.push(format!("screen {} is {width}x{height}, not a non-zero multiple of 16", screen.id));
             }
         }
     }
@@ -185,8 +191,8 @@ pub fn run(config: &Config) -> Report {
     let mut report = Report::default();
     let mut headset = match Headset::connect(config.addr, config.connect_timeout) {
         Ok(h) => h,
-        Err(e) => {
-            report.errors.push(format!("could not connect to {}: {e}", config.addr));
+        Err(error) => {
+            report.errors.push(format!("could not connect to {}: {error}", config.addr));
             return report;
         }
     };
@@ -194,21 +200,25 @@ pub fn run(config: &Config) -> Report {
     let mut requested: Option<Instant> = None;
     while connected.elapsed() < config.duration {
         match headset.recv(POLL) {
-            Ok(Some(Message::Screens(s))) => report.screens = s,
+            Ok(Some(Message::Screens(screens))) => report.screens = screens,
             Ok(Some(Message::Video { key, pts_us, data, .. })) => {
                 report.on_video(key, &data, connected.elapsed());
-                if key && let Some(t) = requested.take() {
-                    report.keyframe_response_ms = Some(ms(t.elapsed()));
+                if key && let Some(asked) = requested.take() {
+                    report.keyframe_response_ms = Some(ms(asked.elapsed()));
                 }
-                let _ = headset.send(&Message::Pong { t_us: pts_us });
+                if let Err(error) = headset.send(&Message::Pong { t_us: pts_us }) {
+                    report.errors.push(format!("pong not sent: {error}"));
+                }
                 if config.request_keyframe && report.frames == 1 {
-                    let _ = headset.send(&Message::KeyframeRequest { screen: 0 });
+                    if let Err(error) = headset.send(&Message::KeyframeRequest { screen: 0 }) {
+                        report.errors.push(format!("keyframe request not sent: {error}"));
+                    }
                     requested = Some(Instant::now());
                 }
             }
             Ok(_) => {}
-            Err(e) => {
-                report.errors.push(format!("connection lost: {e}"));
+            Err(error) => {
+                report.errors.push(format!("connection lost: {error}"));
                 break;
             }
         }
@@ -223,10 +233,10 @@ pub fn run(config: &Config) -> Report {
     report
 }
 
-fn ms(d: Duration) -> f64 {
-    d.as_secs_f64() * 1000.0
+fn ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
 }
 
-fn json_number(v: Option<f64>) -> String {
-    v.map_or_else(|| "null".into(), |v| format!("{v:.1}"))
+fn json_number(number: Option<f64>) -> String {
+    number.map_or_else(|| "null".into(), |value| format!("{value:.1}"))
 }

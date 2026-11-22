@@ -1,0 +1,23 @@
+{
+  "records": [
+    {
+      "name": "one code screen, control priority",
+      "priority": 0,
+      "screens": [{ "id": 0, "role": 0, "width": 1616, "height": 1008 }],
+      "hex": "0900000000020100005006f003"
+    },
+    {
+      "name": "keyframe video, focused priority",
+      "priority": 2,
+      "video": { "screen": 0, "key": true, "pts_us": 258, "data": "00000001" },
+      "hex": "1000000002030001020100000000000000000001"
+    }
+  ],
+  "events": [
+    { "name": "keyframe request for screen 2", "kind": 1, "screen": 2, "value": 0, "hex": "01020000000000000000" },
+    { "name": "pong", "kind": 2, "screen": 0, "value": 4242, "hex": "02009210000000000000" },
+    { "name": "connected", "kind": 3, "screen": 0, "value": 0, "hex": "03000000000000000000" },
+    { "name": "disconnected", "kind": 4, "screen": 0, "value": 0, "hex": "04000000000000000000" },
+    { "name": "listening on 7243", "kind": 5, "screen": 0, "value": 7243, "hex": "05004b1c000000000000" }
+  ]
+}

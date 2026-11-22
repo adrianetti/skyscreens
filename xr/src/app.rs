@@ -1,7 +1,7 @@
 #![expect(unsafe_code, reason = "OpenXR session, JNI and Android surface handles are raw pointers")]
 
 use crate::layout::{DISTANCE_M, TEST_SCREEN_H, TEST_SCREEN_W, quad_size_m};
-use crate::runtime::{Runtime, Vulkan};
+use crate::runtime::{Runtime, Vulkan, pointer_to};
 use crate::{Result, android, gpu::Uploader, net, pattern::test_pattern};
 use android_activity::AndroidApp;
 use ash::vk::{self, Handle};
@@ -38,9 +38,9 @@ struct XrSession {
 impl XrSession {
     fn create(runtime: &Runtime, vulkan: &Vulkan) -> Result<Self> {
         let info = xr::vulkan::SessionCreateInfo {
-            instance: vulkan.instance.handle().as_raw() as *const std::ffi::c_void,
-            physical_device: vulkan.physical_device.as_raw() as *const std::ffi::c_void,
-            device: vulkan.device.handle().as_raw() as *const std::ffi::c_void,
+            instance: pointer_to(vulkan.instance.handle().as_raw())?,
+            physical_device: pointer_to(vulkan.physical_device.as_raw())?,
+            device: pointer_to(vulkan.device.handle().as_raw())?,
             queue_family_index: vulkan.queue_family,
             queue_index: 0,
         };
@@ -49,9 +49,10 @@ impl XrSession {
         let space = session.create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)?;
         let passthrough = if runtime.platform.passthrough {
             let running = xr::PassthroughFlagsFB::IS_RUNNING_AT_CREATION;
-            let p = session.create_passthrough(running)?;
-            let layer = session.create_passthrough_layer(&p, running, xr::PassthroughLayerPurposeFB::RECONSTRUCTION)?;
-            Some((p, layer))
+            let feed = session.create_passthrough(running)?;
+            let layer =
+                session.create_passthrough_layer(&feed, running, xr::PassthroughLayerPurposeFB::RECONSTRUCTION)?;
+            Some((feed, layer))
         } else {
             None
         };
@@ -88,12 +89,12 @@ impl TestScreen {
 
         let mut pixels = test_pattern(usize::from(TEST_SCREEN_W), usize::from(TEST_SCREEN_H));
         if !bgra {
-            pixels.chunks_exact_mut(4).for_each(|p| p.swap(0, 2));
+            pixels.chunks_exact_mut(4).for_each(|pixel| pixel.swap(0, 2));
         }
         let uploader = Uploader::new(vulkan, pixels.len())?;
         let full = vk::Rect2D { offset: vk::Offset2D { x: 0, y: 0 }, extent: vk::Extent2D { width, height } };
         for _ in &images {
-            let i = swapchain.acquire_image()? as usize;
+            let i = usize::try_from(swapchain.acquire_image()?)?;
             swapchain.wait_image(xr::Duration::INFINITE)?;
             uploader.upload(images[i], vk::ImageLayout::UNDEFINED, full, &pixels)?;
             swapchain.release_image()?;
@@ -126,18 +127,18 @@ impl VideoLayer {
     fn apply_screen_updates(&mut self, instance: &xr::Instance, session: &xr::Session<xr::Vulkan>) -> Result<()> {
         while let Ok(screens) = self.screens.try_recv() {
             log::info!("screens: {screens:?}");
-            let Some(s) = screens.first() else { continue };
-            if self.current.as_ref().map(|v| (v.1, v.2)) == Some((s.width, s.height)) {
+            let Some(screen) = screens.first() else { continue };
+            if self.current.as_ref().map(|layer| (layer.1, layer.2)) == Some((screen.width, screen.height)) {
                 continue;
             }
             self.shared.detach_window();
             drop(self.current.take());
-            let (swapchain, surface) = surface_swapchain(instance, session, s.width, s.height)?;
+            let (swapchain, surface) = surface_swapchain(instance, session, screen.width, screen.height)?;
             let env = self.vm.get_env()?;
             let window = unsafe { NativeWindow::from_surface(env.get_raw().cast(), surface.cast()) }
                 .ok_or("no window for surface")?;
-            self.shared.set_window(window, i32::from(s.width), i32::from(s.height));
-            self.current = Some((swapchain, s.width, s.height));
+            self.shared.set_window(window, i32::from(screen.width), i32::from(screen.height));
+            self.current = Some((swapchain, screen.width, screen.height));
         }
         Ok(())
     }
@@ -217,7 +218,7 @@ impl FrameLoop<'_> {
             return Ok(());
         }
         let (chain, w, h) = match &self.video.current {
-            Some((c, w, h)) => (c, *w, *h),
+            Some((layer, w, h)) => (layer, *w, *h),
             None => (&self.test_screen.swapchain, TEST_SCREEN_W, TEST_SCREEN_H),
         };
         let (width_m, height_m) = quad_size_m(w, h);
@@ -241,8 +242,9 @@ impl FrameLoop<'_> {
             layer_handle: *layer.inner(),
         });
         let mut layers: Vec<&xr::CompositionLayerBase<'_, xr::Vulkan>> = Vec::with_capacity(2);
-        if let Some(u) = &underlay {
-            layers.push(unsafe { &*std::ptr::from_ref(u).cast::<xr::CompositionLayerBase<'_, xr::Vulkan>>() });
+        if let Some(passthrough) = &underlay {
+            layers
+                .push(unsafe { &*std::ptr::from_ref(passthrough).cast::<xr::CompositionLayerBase<'_, xr::Vulkan>>() });
         }
         layers.push(&quad);
         self.xr.frame_stream.end(state.predicted_display_time, xr::EnvironmentBlendMode::OPAQUE, &layers)?;
@@ -276,9 +278,9 @@ fn surface_swapchain(
     };
     let mut handle = xr::sys::Swapchain::NULL;
     let mut surface = std::ptr::null_mut();
-    let r = unsafe { create(session.as_raw(), &raw const info, &raw mut handle, &raw mut surface) };
-    if r.into_raw() < 0 {
-        return Err(format!("xrCreateSwapchainAndroidSurfaceKHR: {r:?}").into());
+    let status = unsafe { create(session.as_raw(), &raw const info, &raw mut handle, &raw mut surface) };
+    if status.into_raw() < 0 {
+        return Err(format!("xrCreateSwapchainAndroidSurfaceKHR: {status:?}").into());
     }
     Ok((unsafe { xr::Swapchain::from_raw(session.clone(), handle) }, surface.cast()))
 }

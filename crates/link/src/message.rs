@@ -1,3 +1,5 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Role {
@@ -8,9 +10,21 @@ pub enum Role {
     Other = 255,
 }
 
+impl From<Role> for u8 {
+    fn from(role: Role) -> Self {
+        match role {
+            Role::Code => 0,
+            Role::Chat => 1,
+            Role::Email => 2,
+            Role::Video => 3,
+            Role::Other => 255,
+        }
+    }
+}
+
 impl From<u8> for Role {
-    fn from(v: u8) -> Self {
-        match v {
+    fn from(value: u8) -> Self {
+        match value {
             0 => Self::Code,
             1 => Self::Chat,
             2 => Self::Email,
@@ -47,7 +61,7 @@ pub enum DecodeError {
     UnknownType(u8),
 }
 
-pub const MAX_SCREENS: usize = u8::MAX as usize;
+pub const MAX_SCREENS: usize = 255;
 
 mod tag {
     pub(super) const HELLO: u8 = 1;
@@ -63,17 +77,17 @@ mod tag {
 
 impl Message {
     pub fn encode(&self) -> Vec<u8> {
-        let mut w = Writer(Vec::with_capacity(self.payload_len() + 32));
+        let mut w = Writer(Vec::new());
         match self {
             Self::Hello { version, pixels_per_degree, refresh_rate, max_decoders, max_layers } => {
                 w.u8(tag::HELLO).u16(*version).f32(*pixels_per_degree).f32(*refresh_rate);
                 w.u8(*max_decoders).u8(*max_layers);
             }
             Self::Screens(screens) => {
-                let sent = &screens[..screens.len().min(MAX_SCREENS)];
-                w.u8(tag::SCREENS).u8(u8::try_from(sent.len()).unwrap_or(u8::MAX));
-                for s in sent {
-                    w.u8(s.id).u8(s.role as u8).u16(s.width).u16(s.height);
+                let sent = screens.len().min(MAX_SCREENS);
+                w.u8(tag::SCREENS).u8(u8::try_from(sent).unwrap_or(u8::MAX));
+                for screen in screens.iter().take(sent) {
+                    w.u8(screen.id).u8(u8::from(screen.role)).u16(screen.width).u16(screen.height);
                 }
             }
             Self::Video { screen, key, pts_us, data } => {
@@ -101,54 +115,55 @@ impl Message {
         w.0
     }
 
-    fn payload_len(&self) -> usize {
-        match self {
-            Self::Video { data, .. } => data.len(),
-            Self::Tile { lz4, .. } | Self::CursorShape { lz4, .. } => lz4.len(),
-            Self::Hello { .. }
-            | Self::Screens(_)
-            | Self::Cursor { .. }
-            | Self::KeyframeRequest { .. }
-            | Self::Ping { .. }
-            | Self::Pong { .. } => 0,
-        }
-    }
-
-    pub fn decode(b: &[u8]) -> Result<Self, DecodeError> {
-        let mut r = Reader { b, i: 0 };
-        Ok(match r.u8()? {
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let mut reader = Reader { bytes };
+        Ok(match reader.u8()? {
             tag::HELLO => Self::Hello {
-                version: r.u16()?,
-                pixels_per_degree: r.f32()?,
-                refresh_rate: r.f32()?,
-                max_decoders: r.u8()?,
-                max_layers: r.u8()?,
+                version: reader.u16()?,
+                pixels_per_degree: reader.f32()?,
+                refresh_rate: reader.f32()?,
+                max_decoders: reader.u8()?,
+                max_layers: reader.u8()?,
             },
             tag::SCREENS => {
-                let n = r.u8()?;
+                let n = reader.u8()?;
                 let mut screens = Vec::with_capacity(usize::from(n));
                 for _ in 0..n {
-                    screens.push(Screen { id: r.u8()?, role: Role::from(r.u8()?), width: r.u16()?, height: r.u16()? });
+                    screens.push(Screen {
+                        id: reader.u8()?,
+                        role: Role::from(reader.u8()?),
+                        width: reader.u16()?,
+                        height: reader.u16()?,
+                    });
                 }
                 Self::Screens(screens)
             }
-            tag::VIDEO => Self::Video { screen: r.u8()?, key: r.u8()? != 0, pts_us: r.u64()?, data: r.rest() },
-            tag::TILE => {
-                Self::Tile { screen: r.u8()?, x: r.u16()?, y: r.u16()?, w: r.u16()?, h: r.u16()?, lz4: r.rest() }
+            tag::VIDEO => {
+                Self::Video { screen: reader.u8()?, key: reader.u8()? != 0, pts_us: reader.u64()?, data: reader.rest() }
             }
-            tag::CURSOR => Self::Cursor { screen: r.u8()?, x: r.f32()?, y: r.f32()?, shape: r.u16()? },
-            tag::CURSOR_SHAPE => Self::CursorShape {
-                shape: r.u16()?,
-                hot_x: r.u16()?,
-                hot_y: r.u16()?,
-                w: r.u16()?,
-                h: r.u16()?,
-                lz4: r.rest(),
+            tag::TILE => Self::Tile {
+                screen: reader.u8()?,
+                x: reader.u16()?,
+                y: reader.u16()?,
+                w: reader.u16()?,
+                h: reader.u16()?,
+                lz4: reader.rest(),
             },
-            tag::KEYFRAME_REQUEST => Self::KeyframeRequest { screen: r.u8()? },
-            tag::PING => Self::Ping { t_us: r.u64()? },
-            tag::PONG => Self::Pong { t_us: r.u64()? },
-            t => return Err(DecodeError::UnknownType(t)),
+            tag::CURSOR => {
+                Self::Cursor { screen: reader.u8()?, x: reader.f32()?, y: reader.f32()?, shape: reader.u16()? }
+            }
+            tag::CURSOR_SHAPE => Self::CursorShape {
+                shape: reader.u16()?,
+                hot_x: reader.u16()?,
+                hot_y: reader.u16()?,
+                w: reader.u16()?,
+                h: reader.u16()?,
+                lz4: reader.rest(),
+            },
+            tag::KEYFRAME_REQUEST => Self::KeyframeRequest { screen: reader.u8()? },
+            tag::PING => Self::Ping { t_us: reader.u64()? },
+            tag::PONG => Self::Pong { t_us: reader.u64()? },
+            other => return Err(DecodeError::UnknownType(other)),
         })
     }
 }
@@ -156,38 +171,38 @@ impl Message {
 struct Writer(Vec<u8>);
 
 impl Writer {
-    fn u8(&mut self, v: u8) -> &mut Self {
-        self.0.push(v);
+    fn u8(&mut self, value: u8) -> &mut Self {
+        self.0.push(value);
         self
     }
-    fn u16(&mut self, v: u16) -> &mut Self {
-        self.bytes(&v.to_le_bytes())
+    fn u16(&mut self, value: u16) -> &mut Self {
+        self.bytes(&value.to_le_bytes())
     }
-    fn u64(&mut self, v: u64) -> &mut Self {
-        self.bytes(&v.to_le_bytes())
+    fn u64(&mut self, value: u64) -> &mut Self {
+        self.bytes(&value.to_le_bytes())
     }
-    fn f32(&mut self, v: f32) -> &mut Self {
-        self.bytes(&v.to_le_bytes())
+    fn f32(&mut self, value: f32) -> &mut Self {
+        self.bytes(&value.to_le_bytes())
     }
-    fn bytes(&mut self, v: &[u8]) -> &mut Self {
-        self.0.extend_from_slice(v);
+    fn bytes(&mut self, value: &[u8]) -> &mut Self {
+        self.0.extend_from_slice(value);
         self
     }
 }
 
 struct Reader<'a> {
-    b: &'a [u8],
-    i: usize,
+    bytes: &'a [u8],
 }
 
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
-        let (chunk, _) = self.b.get(self.i..).and_then(<[u8]>::split_first_chunk::<N>).ok_or(DecodeError::Truncated)?;
-        self.i += N;
+        let (chunk, rest) = self.bytes.split_first_chunk::<N>().ok_or(DecodeError::Truncated)?;
+        self.bytes = rest;
         Ok(*chunk)
     }
     fn u8(&mut self) -> Result<u8, DecodeError> {
-        Ok(self.take::<1>()?[0])
+        let [byte] = self.take::<1>()?;
+        Ok(byte)
     }
     fn u16(&mut self) -> Result<u16, DecodeError> {
         Ok(u16::from_le_bytes(self.take()?))
@@ -199,9 +214,7 @@ impl Reader<'_> {
         Ok(f32::from_le_bytes(self.take()?))
     }
     fn rest(&mut self) -> Vec<u8> {
-        let v = self.b[self.i..].to_vec();
-        self.i = self.b.len();
-        v
+        std::mem::take(&mut self.bytes).to_vec()
     }
 }
 
@@ -228,16 +241,16 @@ mod tests {
 
     #[test]
     fn every_message_round_trips() {
-        for m in every_kind() {
-            assert_eq!(Message::decode(&m.encode()), Ok(m));
+        for message in every_kind() {
+            assert_eq!(Message::decode(&message.encode()), Ok(message));
         }
     }
 
     #[test]
     fn truncated_input_is_an_error_not_a_panic() {
-        let b = Message::Cursor { screen: 0, x: 1.0, y: 2.0, shape: 0 }.encode();
-        for n in 0..b.len() {
-            assert_eq!(Message::decode(&b[..n]), Err(DecodeError::Truncated), "length {n}");
+        let bytes = Message::Cursor { screen: 0, x: 1.0, y: 2.0, shape: 0 }.encode();
+        for n in 0..bytes.len() {
+            assert_eq!(Message::decode(&bytes[..n]), Err(DecodeError::Truncated), "length {n}");
         }
     }
 
@@ -249,10 +262,10 @@ mod tests {
 
     #[test]
     fn unknown_roles_decode_as_other() {
-        let mut b = Message::Screens(vec![Screen { id: 0, role: Role::Code, width: 16, height: 16 }]).encode();
-        b[3] = 77;
-        let Ok(Message::Screens(s)) = Message::decode(&b) else { panic!("screens expected") };
-        assert_eq!(s[0].role, Role::Other);
+        let mut bytes = Message::Screens(vec![Screen { id: 0, role: Role::Code, width: 16, height: 16 }]).encode();
+        bytes[3] = 77;
+        let Ok(Message::Screens(screens)) = Message::decode(&bytes) else { panic!("screens expected") };
+        assert_eq!(screens[0].role, Role::Other);
     }
 
     #[test]
@@ -263,5 +276,12 @@ mod tests {
         let video = Message::Video { screen: 2, key: true, pts_us: 0x0102, data: vec![0xaa] };
         assert_eq!(video.encode(), [3, 2, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0xaa]);
         assert_eq!(Message::KeyframeRequest { screen: 9 }.encode(), [7, 9]);
+    }
+
+    #[test]
+    fn every_known_role_survives_its_byte() {
+        for role in [Role::Code, Role::Chat, Role::Email, Role::Video, Role::Other] {
+            assert_eq!(Role::from(u8::from(role)), role, "{role:?}");
+        }
     }
 }

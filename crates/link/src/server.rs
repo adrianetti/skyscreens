@@ -11,6 +11,8 @@ use std::thread;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
+    Connected,
+    Disconnected,
     KeyframeRequest { screen: u8 },
     Pong { t_us: u64 },
 }
@@ -79,13 +81,13 @@ impl Server {
     }
 
     pub fn send_cursor(&self, screen: u8, x: f32, y: f32, shape: u16) -> bool {
-        lock(&self.sender).as_ref().is_some_and(|s| {
-            s.replace(channel::CURSOR, Priority::Cursor, &Message::Cursor { screen, x, y, shape }).is_ok()
+        lock(&self.sender).as_ref().is_some_and(|sender| {
+            sender.replace(channel::CURSOR, Priority::Cursor, &Message::Cursor { screen, x, y, shape }).is_ok()
         })
     }
 
-    fn send(&self, channel: u8, priority: Priority, m: &Message) -> bool {
-        lock(&self.sender).as_ref().is_some_and(|s| s.send(channel, priority, m).is_ok())
+    fn send(&self, channel: u8, priority: Priority, message: &Message) -> bool {
+        lock(&self.sender).as_ref().is_some_and(|sender| sender.send(channel, priority, message).is_ok())
     }
 
     fn accept_forever(self: Arc<Self>, listener: &TcpListener) {
@@ -95,20 +97,39 @@ impl Server {
     }
 
     fn serve(self: &Arc<Self>, stream: &TcpStream) {
-        let _ = stream.set_nodelay(true);
+        if let Err(error) = stream.set_nodelay(true) {
+            log::warn!("headset socket: nodelay: {error}");
+        }
         let Ok(reader) = stream.try_clone() else { return };
         let sender = Sender::new(TCP_FRAGMENT);
         let screens = lock(&self.screens).clone();
-        let _ = sender.send(channel::MAC_CONTROL, Priority::Control, &Message::Screens(screens));
+        if let Err(error) = sender.send(channel::MAC_CONTROL, Priority::Control, &Message::Screens(screens)) {
+            log::warn!("screen list not sent: {error}");
+        }
         *lock(&self.sender) = Some(sender.clone());
         self.connected.store(true, Ordering::SeqCst);
+        self.emit(Event::Connected);
         let me = Arc::clone(self);
         let read = thread::spawn(move || me.read_until_closed(reader));
-        let _ = sender.pump(stream);
-        let _ = stream.shutdown(Shutdown::Both);
-        let _ = read.join();
+        if let Err(error) = sender.pump(stream) {
+            log::info!("headset connection ended: {error}");
+        }
+        if let Err(error) = stream.shutdown(Shutdown::Both) {
+            log::debug!("headset socket already closed: {error}");
+        }
+        if read.join().is_err() {
+            log::error!("headset reader thread panicked");
+        }
         self.connected.store(false, Ordering::SeqCst);
         *lock(&self.sender) = None;
+        self.emit(Event::Disconnected);
+    }
+
+    fn emit(&self, event: Event) {
+        let handler = lock(&self.handler).clone();
+        if let Some(handle) = handler {
+            handle(event);
+        }
     }
 
     fn read_until_closed(&self, mut stream: TcpStream) {
@@ -116,21 +137,18 @@ impl Server {
         let mut buf = vec![0u8; 64 * 1024];
         while let Ok(n @ 1..) = stream.read(&mut buf) {
             let Ok(messages) = reassembler.feed(&buf[..n]) else { break };
-            let handler = lock(&self.handler).clone();
             for event in messages.iter().filter_map(event_from) {
-                if let Some(h) = &handler {
-                    h(event);
-                }
+                self.emit(event);
             }
         }
-        if let Some(s) = lock(&self.sender).as_ref() {
-            s.close();
+        if let Some(sender) = lock(&self.sender).as_ref() {
+            sender.close();
         }
     }
 }
 
-fn event_from(m: &Message) -> Option<Event> {
-    match *m {
+fn event_from(message: &Message) -> Option<Event> {
+    match *message {
         Message::KeyframeRequest { screen } => Some(Event::KeyframeRequest { screen }),
         Message::Pong { t_us } => Some(Event::Pong { t_us }),
         Message::Hello { .. }
@@ -143,6 +161,19 @@ fn event_from(m: &Message) -> Option<Event> {
     }
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_output_names_the_address_and_state() {
+        let server = Server::listen(TcpListener::bind("127.0.0.1:0").unwrap()).unwrap();
+        let text = format!("{server:?}");
+        assert!(text.starts_with("Server { addr: 127.0.0.1:"), "{text}");
+        assert!(text.contains("connected: false"), "{text}");
+    }
 }

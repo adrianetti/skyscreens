@@ -39,7 +39,7 @@ Add the `export` line to `~/.zshrc` too. `rustup toolchain install` reads `rust-
 **Check tools.** `scripts/check.sh` needs these. Ruff, mypy and zizmor run through `uvx` at pinned versions, so they need no separate install:
 
 ```sh
-brew install cbindgen cargo-deny cargo-llvm-cov cargo-shear swiftlint shellcheck shfmt actionlint typos-cli uv
+brew install cargo-deny cargo-llvm-cov cargo-shear cargo-mutants swiftlint shellcheck shfmt actionlint typos-cli uv
 ```
 
 **Android SDK, NDK and JDK** for the headset app. The headset app has no Java code and needs no Gradle, only these packages:
@@ -63,14 +63,16 @@ One script runs every check, and CI runs the same script. The rules behind each 
 ```sh
 scripts/check.sh          # everything; must pass before a change is done
 scripts/check.sh fast     # formatting, lints and Rust tests
-scripts/check.sh fix      # apply the formatters and regenerate mac/Sources/CLink/include/link.h
+scripts/check.sh fix      # apply the formatters
+scripts/check.sh mutants  # mutation testing of the protocol crates, a few minutes
 ```
 
 | Stage | What it checks |
 |---|---|
-| `scripts` | File limits and whitespace, no comments, spelling (typos), script tests, ruff, mypy, shfmt, ShellCheck, actionlint, zizmor |
-| `rust` | rustfmt, clippy (pedantic plus restriction lints, warnings are errors), unit, property and loopback tests with at least 85% line coverage, `link.h` drift, `cargo deny`, `cargo shear` |
-| `swift` | `swift format` and SwiftLint (strict), Swift 6 build with warnings as errors, Swift Testing suites, bench typecheck |
+| `scripts` | File limits and whitespace, no comments, the escape-hatch ledger, spelling (typos), script tests, ruff, mypy, shfmt, ShellCheck, actionlint, zizmor |
+| `rust` | rustfmt, clippy (pedantic plus restriction lints, warnings are errors), unit, property and loopback tests with at least 85% line coverage, `cargo deny`, `cargo shear` |
+| `swift` | `swift format` and SwiftLint (strict), Swift 6 build with strict memory safety and warnings as errors, Swift Testing suites with a 90% coverage floor for pure logic, bench typecheck |
+| `mutants` | `cargo mutants` on `link` and `link-helper`; fails if any mutant survives. CI runs it as its own job |
 | `android` | clippy for `aarch64-linux-android`, then the APK |
 
 Enable the git hooks once. Then `pre-commit` runs `scripts/check.sh fast`, and `commit-msg` checks the Conventional Commits format:
@@ -87,6 +89,12 @@ scripts/eval.sh quest     # full pipeline on a Quest connected over USB
 ```
 
 `scripts/eval.sh mac` adds a virtual screen for about 12 seconds and streams a moving test pattern. Then it fails on a wrong screen list, an undecodable keyframe, an unanswered keyframe request, fewer than 30 fps, a round trip over 60 ms, or a virtual screen left behind. [AGENTS.md](../AGENTS.md#evals) has the details.
+
+### Guardrails for agents and contributors
+
+- `escape-hatches.json` lists every `unsafe` block, lint exception, discarded result and other escape hatch, and fingerprints every rule file. `scripts/check.sh` fails when the code differs from it. After you review an intended change, regenerate it with `scripts/escape_hatches.py --update`.
+- `.github/CODEOWNERS` names the rule files. To make it binding, add a branch ruleset on GitHub (Settings → Rules → Rulesets) for `main` with "Require a pull request before merging" and "Require review from Code Owners".
+- `.claude/settings.json` makes Claude Code ask before editing a protected file and blocks shell commands that would rewrite one or regenerate the ledger.
 
 ## Code signing
 
@@ -207,7 +215,8 @@ ScreenCaptureKit sends a frame only when something on the screen changes. To mea
 | The streamer prints `waiting...` forever | The headset app isn't connected. Check `adb reverse --list` and the headset log |
 | The headset log shows a decoder error | MediaCodec may reject a low-latency key. Remove `operating-rate` or `vendor.qti-ext-dec-low-latency.enable` in `xr/src/decoder.rs` and rebuild |
 | `xr/build.sh` can't find a tool | Install the exact SDK package versions listed above, or set `ANDROID_HOME` and `JAVA_HOME`. The NDK must be `27.2.12479018` under `$ANDROID_HOME/ndk` |
-| `check.sh` says `link.h is stale` | You changed `crates/link/src/ffi.rs`. Run `scripts/check.sh fix` |
+| `check.sh` says the escape hatches changed | You added an `unsafe` block, a lint `expect`, a discarded result, or touched a rule file. Remove it; if it is truly needed, the maintainer reviews it and runs `scripts/escape_hatches.py --update` |
+| Claude Code asks before editing a config file | The file is protected (`.claude/settings.json`); approve only changes you intend |
 | `check.sh` reports a comment | Code carries no comments. Rename until the code explains itself, and move design reasons to `docs/architecture.md` |
 | `cargo: command not found` | Add rustup to your `PATH` (see [Install the toolchains](#install-the-toolchains)) |
 

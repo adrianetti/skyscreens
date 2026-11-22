@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "ask": [
+      "Edit(**/escape-hatches.json)",
+      "Edit(**/AGENTS.md)",
+      "Edit(**/docs/code-standards.md)",
+      "Edit(**/Cargo.toml)",
+      "Edit(**/clippy.toml)",
+      "Edit(**/rustfmt.toml)",
+      "Edit(**/rust-toolchain.toml)",
+      "Edit(**/deny.toml)",
+      "Edit(**/ruff.toml)",
+      "Edit(**/mypy.ini)",
+      "Edit(**/.swiftlint.yml)",
+      "Edit(**/.swift-format)",
+      "Edit(**/.shellcheckrc)",
+      "Edit(**/.editorconfig)",
+      "Edit(**/_typos.toml)",
+      "Edit(**/mac/Package.swift)",
+      "Edit(**/scripts/**)",
+      "Edit(**/.github/**)",
+      "Edit(**/.claude/settings.json)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/agent_guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

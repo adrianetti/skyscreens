@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -32,5 +33,32 @@ struct StreamStatsTests {
     @Test func missingMeasurementsAreNull() throws {
         let line = StreamStats().summaryJSON(seconds: 1, everConnected: false)
         #expect(line.contains("\"round_trip_p50_ms\":null"))
+    }
+}
+
+struct FixedFormatTests {
+    @Test func formatsLikePrintfWithoutLocaleSurprises() {
+        #expect(FixedFormat.decimal(7.94, places: 1, width: 5) == "  7.9")
+        #expect(FixedFormat.decimal(12_345.678, places: 2) == "12345.68")
+        #expect(FixedFormat.decimal(.nan, places: 1, width: 5) == "  nan")
+        #expect(FixedFormat.integer(7, width: 2) == " 7")
+    }
+
+    @Test func theCaptureColorSpaceNameIsValid() {
+        #expect(CGColorSpace(name: ScreenCapture.sRGBName as CFString) != nil)
+    }
+}
+
+struct StreamLineTests {
+    @Test func theLiveLineShowsRatesAndLatency() {
+        let stats = StreamStats(frames: 60, keyframes: 1, bytes: 1_500_000, encodeMs: [6.1], roundTripMs: [18, 24])
+        let line = stats.line(connected: true)
+        #expect(line.hasPrefix("connected   60 fps   12.0 Mbps  encode  6.1 ms"))
+        #expect(line.hasSuffix("p50  24.0  p95  24.0 ms"))
+    }
+
+    @Test func aWaitingStreamShowsNan() {
+        #expect(StreamStats().line(connected: false).contains("waiting...   0 fps"))
+        #expect(StreamStats().line(connected: false).contains("p50   nan"))
     }
 }

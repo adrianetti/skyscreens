@@ -2,28 +2,30 @@ import CoreGraphics
 import Foundation
 import SkyscreensKit
 
-setvbuf(stdout, nil, _IOLBF, 0)
+setsid()
 
 let args = CommandLine.arguments
+var keepAlive: [any DispatchSourceProtocol] = []
 
 func option(_ name: String) -> String? {
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
     return args[i + 1]
 }
 
+@MainActor
 func exitOnSignalsAndParentExit() {
     for sig in [SIGTERM, SIGINT, SIGHUP] {
         signal(sig, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
         source.setEventHandler { exit(0) }
         source.resume()
-        _ = Unmanaged.passRetained(source)
+        keepAlive.append(source)
     }
     guard let parent = option("--parent").flatMap(pid_t.init) else { return }
     let source = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit, queue: .main)
     source.setEventHandler { exit(0) }
     source.resume()
-    _ = Unmanaged.passRetained(source)
+    keepAlive.append(source)
 }
 
 struct Started: Encodable {
@@ -45,7 +47,7 @@ do {
     set = try VirtualDisplaySet(specs)
     try set.waitUntilReady()
     let started = Started(pid: getpid(), screens: zip(set.ids, specs).map { .init(id: $0, spec: $1) })
-    print(String(bytes: try JSONEncoder().encode(started), encoding: .utf8) ?? "")
+    FileHandle.standardOutput.write(try JSONEncoder().encode(started) + Data("\n".utf8))
 } catch {
     FileHandle.standardError.write(Data("skyscreens-displays: \(error)\n".utf8))
     exit(1)

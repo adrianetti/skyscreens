@@ -50,15 +50,19 @@ impl Uploader {
     fn staging(vulkan: &Vulkan, capacity: usize) -> Result<Staging> {
         let device = &vulkan.device;
         let buffer_info =
-            vk::BufferCreateInfo::default().size(capacity as u64).usage(vk::BufferUsageFlags::TRANSFER_SRC);
+            vk::BufferCreateInfo::default().size(u64::try_from(capacity)?).usage(vk::BufferUsageFlags::TRANSFER_SRC);
         let buffer = unsafe { device.create_buffer(&buffer_info, None) }?;
         let req = unsafe { device.get_buffer_memory_requirements(buffer) };
         let props = unsafe { vulkan.instance.get_physical_device_memory_properties(vulkan.physical_device) };
         let wanted = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
-        let type_index = (0..props.memory_type_count)
-            .find(|&i| {
-                req.memory_type_bits & (1 << i) != 0 && props.memory_types[i as usize].property_flags.contains(wanted)
+        let type_index = props
+            .memory_types_as_slice()
+            .iter()
+            .zip(0u32..)
+            .find(|(memory_type, i)| {
+                req.memory_type_bits & (1 << i) != 0 && memory_type.property_flags.contains(wanted)
             })
+            .map(|(_, i)| i)
             .ok_or("no host-visible memory")?;
         let alloc = vk::MemoryAllocateInfo::default().allocation_size(req.size).memory_type_index(type_index);
         let memory = unsafe { device.allocate_memory(&alloc, None) }?;
@@ -83,7 +87,7 @@ impl Uploader {
     }
 
     fn record_copy(&self, image: vk::Image, old_layout: vk::ImageLayout, rect: vk::Rect2D) -> Result<()> {
-        let d = &self.device;
+        let device = &self.device;
         let to_transfer = layout_barrier(
             image,
             old_layout,
@@ -106,28 +110,28 @@ impl Uploader {
             .image_extent(vk::Extent3D { width: rect.extent.width, height: rect.extent.height, depth: 1 });
         let begin = vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         let none = vk::DependencyFlags::empty();
-        unsafe { d.reset_command_buffer(self.cmd, vk::CommandBufferResetFlags::empty()) }?;
-        unsafe { d.begin_command_buffer(self.cmd, &begin) }?;
+        unsafe { device.reset_command_buffer(self.cmd, vk::CommandBufferResetFlags::empty()) }?;
+        unsafe { device.begin_command_buffer(self.cmd, &begin) }?;
         let (top, transfer, bottom) = (
             vk::PipelineStageFlags::TOP_OF_PIPE,
             vk::PipelineStageFlags::TRANSFER,
             vk::PipelineStageFlags::BOTTOM_OF_PIPE,
         );
-        unsafe { d.cmd_pipeline_barrier(self.cmd, top, transfer, none, &[], &[], &[to_transfer]) };
+        unsafe { device.cmd_pipeline_barrier(self.cmd, top, transfer, none, &[], &[], &[to_transfer]) };
         let dst = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-        unsafe { d.cmd_copy_buffer_to_image(self.cmd, self.staging, image, dst, &[copy]) };
-        unsafe { d.cmd_pipeline_barrier(self.cmd, transfer, bottom, none, &[], &[], &[to_compositor]) };
-        unsafe { d.end_command_buffer(self.cmd) }?;
+        unsafe { device.cmd_copy_buffer_to_image(self.cmd, self.staging, image, dst, &[copy]) };
+        unsafe { device.cmd_pipeline_barrier(self.cmd, transfer, bottom, none, &[], &[], &[to_compositor]) };
+        unsafe { device.end_command_buffer(self.cmd) }?;
         Ok(())
     }
 
     fn submit_and_wait(&self) -> Result<()> {
-        let d = &self.device;
+        let device = &self.device;
         let cmds = [self.cmd];
         let submit = vk::SubmitInfo::default().command_buffers(&cmds);
-        unsafe { d.queue_submit(self.queue, &[submit], self.fence) }?;
-        unsafe { d.wait_for_fences(&[self.fence], true, u64::MAX) }?;
-        unsafe { d.reset_fences(&[self.fence]) }?;
+        unsafe { device.queue_submit(self.queue, &[submit], self.fence) }?;
+        unsafe { device.wait_for_fences(&[self.fence], true, u64::MAX) }?;
+        unsafe { device.reset_fences(&[self.fence]) }?;
         Ok(())
     }
 }
@@ -154,11 +158,13 @@ fn layout_barrier(
 
 impl Drop for Uploader {
     fn drop(&mut self) {
-        let d = &self.device;
-        let _ = unsafe { d.device_wait_idle() };
-        unsafe { d.destroy_buffer(self.staging, None) };
-        unsafe { d.free_memory(self.memory, None) };
-        unsafe { d.destroy_fence(self.fence, None) };
-        unsafe { d.destroy_command_pool(self.pool, None) };
+        let device = &self.device;
+        if let Err(error) = unsafe { device.device_wait_idle() } {
+            log::warn!("device idle before teardown: {error}");
+        }
+        unsafe { device.destroy_buffer(self.staging, None) };
+        unsafe { device.free_memory(self.memory, None) };
+        unsafe { device.destroy_fence(self.fence, None) };
+        unsafe { device.destroy_command_pool(self.pool, None) };
     }
 }

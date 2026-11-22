@@ -1,4 +1,3 @@
-import Compression
 import CoreVideo
 import Foundation
 import Testing
@@ -7,18 +6,7 @@ import Testing
 
 struct LosslessTileTests {
     func decompress(_ data: Data, size: Int) -> [UInt8] {
-        var out = [UInt8](repeating: 0, count: size)
-        let n = data.withUnsafeBytes { src in
-            compression_decode_buffer(
-                &out,
-                size,
-                src.bindMemory(to: UInt8.self).baseAddress.unsafelyUnwrapped,
-                data.count,
-                nil,
-                COMPRESSION_LZ4_RAW
-            )
-        }
-        return Array(out.prefix(n))
+        [UInt8](PixelMemory.decompressRawLZ4(data, expectedSize: size) ?? Data())
     }
 
     func textLikeScreen() throws -> CVPixelBuffer {
@@ -33,7 +21,7 @@ struct LosslessTileTests {
         let buffer = try textLikeScreen()
         let rect = CGRect(x: 8, y: 4, width: 32, height: 16)
         let tile = try #require(LosslessTile.encode(buffer, rect: rect))
-        let expected = try #require(LosslessTile.pixels(of: buffer, in: rect))
+        let expected = try #require(PixelMemory.rows(of: buffer, in: rect))
         #expect(decompress(tile, size: expected.count) == [UInt8](expected))
         #expect(tile.count < expected.count)
     }
@@ -41,7 +29,7 @@ struct LosslessTileTests {
     @Test func rectsAreClippedToTheBuffer() throws {
         let buffer = try textLikeScreen()
         let tile = try #require(LosslessTile.encode(buffer, rect: CGRect(x: 48, y: 40, width: 100, height: 100)))
-        let expected = try #require(LosslessTile.pixels(of: buffer, in: CGRect(x: 48, y: 40, width: 16, height: 8)))
+        let expected = try #require(PixelMemory.rows(of: buffer, in: CGRect(x: 48, y: 40, width: 16, height: 8)))
         #expect(decompress(tile, size: expected.count) == [UInt8](expected))
     }
 

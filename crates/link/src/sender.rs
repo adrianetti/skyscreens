@@ -14,9 +14,35 @@ pub enum Priority {
     Refine = 5,
 }
 
+impl Priority {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Control => 0,
+            Self::Cursor => 1,
+            Self::Focused => 2,
+            Self::Video => 3,
+            Self::Background => 4,
+            Self::Refine => 5,
+        }
+    }
+}
+
+impl From<Priority> for u8 {
+    fn from(priority: Priority) -> Self {
+        match priority {
+            Priority::Control => 0,
+            Priority::Cursor => 1,
+            Priority::Focused => 2,
+            Priority::Video => 3,
+            Priority::Background => 4,
+            Priority::Refine => 5,
+        }
+    }
+}
+
 impl From<u8> for Priority {
-    fn from(v: u8) -> Self {
-        match v {
+    fn from(value: u8) -> Self {
+        match value {
             0 => Self::Control,
             1 => Self::Cursor,
             2 => Self::Focused,
@@ -27,7 +53,7 @@ impl From<u8> for Priority {
     }
 }
 
-const LEVELS: usize = Priority::Refine as usize + 1;
+const LEVELS: usize = 6;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SendError {
@@ -37,7 +63,7 @@ pub enum SendError {
 impl std::fmt::Display for SendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TooLarge(n) => write!(f, "message of {n} bytes exceeds {MAX_MESSAGE}"),
+            Self::TooLarge(size) => write!(f, "message of {size} bytes exceeds the limit"),
         }
     }
 }
@@ -64,9 +90,9 @@ impl Queues {
     fn push(&mut self, priority: Priority, channel: u8, body: Vec<u8>, count: u16, latest_only: bool) {
         let id = self.ids[usize::from(channel)];
         self.ids[usize::from(channel)] = id.wrapping_add(1);
-        let level = &mut self.levels[priority as usize];
+        let level = &mut self.levels[priority.index()];
         if latest_only {
-            level.retain(|p| p.channel != channel || p.next > 0);
+            level.retain(|pending| pending.channel != channel || pending.next > 0);
         }
         level.push_back(Pending { channel, id, body, next: 0, count });
     }
@@ -82,12 +108,17 @@ impl Default for Queues {
 pub struct Sender {
     inner: Arc<(Mutex<Queues>, Condvar)>,
     fragment: usize,
+    max_message: usize,
 }
 
 impl Sender {
     pub fn new(fragment: usize) -> Self {
+        Self::with_max_message(fragment, MAX_MESSAGE)
+    }
+
+    pub fn with_max_message(fragment: usize, max_message: usize) -> Self {
         assert!((1..=MAX_FRAGMENT).contains(&fragment), "fragment size {fragment} outside 1..={MAX_FRAGMENT}");
-        Self { inner: Arc::new((Mutex::new(Queues::default()), Condvar::new())), fragment }
+        Self { inner: Arc::new((Mutex::new(Queues::default()), Condvar::new())), fragment, max_message }
     }
 
     pub fn send(&self, channel: u8, priority: Priority, msg: &Message) -> Result<(), SendError> {
@@ -104,9 +135,9 @@ impl Sender {
     }
 
     pub fn next_frame(&self) -> Option<Vec<u8>> {
-        let mut q = self.queues();
+        let mut queues = self.queues();
         loop {
-            if let Some(level) = q.levels.iter_mut().find(|l| !l.is_empty()) {
+            if let Some(level) = queues.levels.iter_mut().find(|level| !level.is_empty()) {
                 let pending = level.front_mut()?;
                 let frame = self.take_fragment(pending);
                 if pending.next == pending.count {
@@ -114,10 +145,10 @@ impl Sender {
                 }
                 return Some(frame);
             }
-            if q.closed {
+            if queues.closed {
                 return None;
             }
-            q = self.inner.1.wait(q).unwrap_or_else(PoisonError::into_inner);
+            queues = self.inner.1.wait(queues).unwrap_or_else(PoisonError::into_inner);
         }
     }
 
@@ -130,7 +161,7 @@ impl Sender {
 
     fn enqueue(&self, channel: u8, priority: Priority, msg: &Message, latest_only: bool) -> Result<(), SendError> {
         let body = msg.encode();
-        if body.len() > MAX_MESSAGE {
+        if body.len() > self.max_message {
             return Err(SendError::TooLarge(body.len()));
         }
         let Ok(count) = u16::try_from(body.len().div_ceil(self.fragment).max(1)) else {
@@ -141,18 +172,18 @@ impl Sender {
         Ok(())
     }
 
-    fn take_fragment(&self, p: &mut Pending) -> Vec<u8> {
-        let start = usize::from(p.next) * self.fragment;
-        let end = (start + self.fragment).min(p.body.len());
+    fn take_fragment(&self, pending: &mut Pending) -> Vec<u8> {
+        let start = usize::from(pending.next) * self.fragment;
+        let end = (start + self.fragment).min(pending.body.len());
         let len = u32::try_from(FRAGMENT_HEADER + end - start).unwrap_or(u32::MAX);
         let mut out = Vec::with_capacity(LENGTH_PREFIX + FRAGMENT_HEADER + end - start);
         out.extend(len.to_le_bytes());
-        out.push(p.channel);
-        out.extend(p.id.to_le_bytes());
-        out.extend(p.next.to_le_bytes());
-        out.extend(p.count.to_le_bytes());
-        out.extend_from_slice(&p.body[start..end]);
-        p.next += 1;
+        out.push(pending.channel);
+        out.extend(pending.id.to_le_bytes());
+        out.extend(pending.next.to_le_bytes());
+        out.extend(pending.count.to_le_bytes());
+        out.extend_from_slice(&pending.body[start..end]);
+        pending.next += 1;
         out
     }
 
@@ -165,29 +196,58 @@ impl Sender {
 mod tests {
     use super::*;
     use crate::{TCP_FRAGMENT, receiver::Reassembler};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
-    fn drain(s: &Sender) -> Vec<Message> {
-        s.close();
-        let mut stream = Vec::new();
-        s.pump(&mut stream).unwrap();
+    fn within<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+        let (done, result) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _receiver_gone = done.send(work());
+        });
+        result.recv_timeout(Duration::from_secs(5)).expect("the sender stopped making progress")
+    }
+
+    fn drain(sender: &Sender) -> Vec<Message> {
+        sender.close();
+        let sender = sender.clone();
+        let stream = within(move || {
+            let mut stream = Vec::new();
+            sender.pump(&mut stream).unwrap();
+            stream
+        });
         Reassembler::default().feed(&stream).unwrap()
+    }
+
+    fn drain_bytes(sender: &Sender) -> Vec<u8> {
+        sender.close();
+        let sender = sender.clone();
+        within(move || {
+            let mut stream = Vec::new();
+            sender.pump(&mut stream).unwrap();
+            stream
+        })
+    }
+
+    fn next(sender: &Sender) -> Option<Vec<u8>> {
+        let sender = sender.clone();
+        within(move || sender.next_frame())
     }
 
     #[test]
     fn cursor_jumps_ahead_of_a_large_refresh() {
-        let s = Sender::new(TCP_FRAGMENT);
+        let sender = Sender::new(TCP_FRAGMENT);
         let big = Message::Tile { screen: 0, x: 0, y: 0, w: 1616, h: 1008, lz4: vec![1; 480_000] };
-        s.send(10, Priority::Refine, &big).unwrap();
-        let first = s.next_frame().unwrap();
-        s.send(1, Priority::Cursor, &Message::Cursor { screen: 0, x: 1.0, y: 2.0, shape: 0 }).unwrap();
-        let second = s.next_frame().unwrap();
+        sender.send(10, Priority::Refine, &big).unwrap();
+        let first = next(&sender).unwrap();
+        sender.send(1, Priority::Cursor, &Message::Cursor { screen: 0, x: 1.0, y: 2.0, shape: 0 }).unwrap();
+        let second = next(&sender).unwrap();
         assert_eq!(first[LENGTH_PREFIX], 10, "refresh started first");
         assert_eq!(second[LENGTH_PREFIX], 1, "cursor sent before the rest of the refresh");
     }
 
     #[test]
     fn interleaved_fragments_reassemble() {
-        let s = Sender::new(1000);
+        let sender = Sender::new(1000);
         let video = Message::Video {
             screen: 0,
             key: false,
@@ -195,55 +255,67 @@ mod tests {
             data: (0..20_000u32).map(|i| i.to_le_bytes()[0]).collect(),
         };
         let tile = Message::Tile { screen: 1, x: 5, y: 6, w: 7, h: 8, lz4: vec![9; 5_000] };
-        s.send(3, Priority::Video, &video).unwrap();
-        s.send(4, Priority::Focused, &tile).unwrap();
-        assert_eq!(drain(&s), vec![tile, video]);
+        sender.send(3, Priority::Video, &video).unwrap();
+        sender.send(4, Priority::Focused, &tile).unwrap();
+        assert_eq!(drain(&sender), vec![tile, video]);
     }
 
     #[test]
     fn replace_keeps_only_the_newest_cursor() {
-        let s = Sender::new(TCP_FRAGMENT);
+        let sender = Sender::new(TCP_FRAGMENT);
         for i in 0..5u8 {
-            s.replace(1, Priority::Cursor, &Message::Cursor { screen: 0, x: f32::from(i), y: 0.0, shape: 0 }).unwrap();
+            sender
+                .replace(1, Priority::Cursor, &Message::Cursor { screen: 0, x: f32::from(i), y: 0.0, shape: 0 })
+                .unwrap();
         }
-        assert_eq!(drain(&s), vec![Message::Cursor { screen: 0, x: 4.0, y: 0.0, shape: 0 }]);
+        assert_eq!(drain(&sender), vec![Message::Cursor { screen: 0, x: 4.0, y: 0.0, shape: 0 }]);
     }
 
     #[test]
     fn replace_never_drops_a_message_that_started_sending() {
-        let s = Sender::new(8);
+        let sender = Sender::new(8);
         let first = Message::Video { screen: 0, key: true, pts_us: 1, data: vec![1; 40] };
-        s.send(0, Priority::Video, &first).unwrap();
-        let mut stream = s.next_frame().unwrap();
+        sender.send(0, Priority::Video, &first).unwrap();
+        let mut stream = next(&sender).unwrap();
         let newest = Message::Video { screen: 0, key: false, pts_us: 2, data: vec![2; 40] };
-        s.replace(0, Priority::Video, &newest).unwrap();
-        s.close();
-        s.pump(&mut stream).unwrap();
+        sender.replace(0, Priority::Video, &newest).unwrap();
+        let rest = drain_bytes(&sender);
+        stream.extend(rest);
         assert_eq!(Reassembler::default().feed(&stream).unwrap(), vec![first, newest]);
     }
 
     #[test]
-    fn oversized_messages_are_refused() {
-        let s = Sender::new(TCP_FRAGMENT);
+    fn the_message_size_limit_is_exact() {
+        let ping = Message::Ping { t_us: 1 };
+        let size = ping.encode().len();
+        assert!(Sender::with_max_message(4, size).send(0, Priority::Control, &ping).is_ok(), "at the limit");
+        let refused = Sender::with_max_message(4, size - 1).send(0, Priority::Control, &ping);
+        assert_eq!(refused, Err(SendError::TooLarge(size)), "one byte over");
+        assert_eq!(SendError::TooLarge(size).to_string(), format!("message of {size} bytes exceeds the limit"));
+    }
+
+    #[test]
+    fn the_default_limit_is_the_protocol_limit() {
         let huge = Message::Video { screen: 0, key: false, pts_us: 0, data: vec![0; MAX_MESSAGE] };
-        assert!(matches!(s.send(0, Priority::Video, &huge), Err(SendError::TooLarge(_))));
+        assert!(matches!(Sender::new(TCP_FRAGMENT).send(0, Priority::Video, &huge), Err(SendError::TooLarge(_))));
     }
 
     #[test]
     fn close_wakes_a_blocked_writer() {
-        let s = Sender::new(TCP_FRAGMENT);
-        let writer = {
-            let s = s.clone();
-            std::thread::spawn(move || s.next_frame())
-        };
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        s.close();
-        assert_eq!(writer.join().unwrap(), None);
+        let sender = Sender::new(TCP_FRAGMENT);
+        let (done, result) = mpsc::channel();
+        let blocked = sender.clone();
+        std::thread::spawn(move || {
+            let _receiver_gone = done.send(blocked.next_frame());
+        });
+        assert!(result.recv_timeout(Duration::from_millis(50)).is_err(), "nothing to send yet, so it blocks");
+        sender.close();
+        assert_eq!(result.recv_timeout(Duration::from_secs(5)), Ok(None), "closing wakes it with None");
     }
 
     #[test]
     fn priorities_round_trip_through_u8() {
-        for p in [
+        for priority in [
             Priority::Control,
             Priority::Cursor,
             Priority::Focused,
@@ -251,7 +323,8 @@ mod tests {
             Priority::Background,
             Priority::Refine,
         ] {
-            assert_eq!(Priority::from(p as u8), p);
+            assert_eq!(Priority::from(u8::from(priority)), priority);
+            assert!(priority.index() < LEVELS);
         }
         assert_eq!(Priority::from(200), Priority::Refine);
     }

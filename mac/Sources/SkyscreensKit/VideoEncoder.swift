@@ -30,7 +30,7 @@ public final class VideoEncoder: @unchecked Sendable {
             kVTVideoEncoderSpecification_EnableLowLatencyRateControl: true,
         ]
         var created: VTCompressionSession?
-        let status = VTCompressionSessionCreate(
+        let status = unsafe VTCompressionSessionCreate(
             allocator: nil,
             width: Int32(width),
             height: Int32(height),
@@ -79,68 +79,29 @@ public final class VideoEncoder: @unchecked Sendable {
     public func flush() { VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid) }
 
     static func annexB(_ sample: CMSampleBuffer) -> (Data, Bool)? {
-        guard let block = CMSampleBufferGetDataBuffer(sample),
-            let format = CMSampleBufferGetFormatDescription(sample)
-        else { return nil }
+        guard let block = sample.dataBuffer, let format = sample.formatDescription else { return nil }
+        let payload: Data
+        do {
+            payload = try block.dataBytes()
+        } catch {
+            return nil
+        }
         let attachments =
             CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[CFString: Any]]
         let isKey = !(attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool ?? false)
         var out = Data()
-        var lengthSize: Int32 = 4
         if isKey {
-            appendParameterSets(of: format, to: &out, lengthSize: &lengthSize)
+            for parameterSet in format.parameterSets {
+                out.append(contentsOf: startCode)
+                out.append(parameterSet)
+            }
         }
-        guard appendUnits(of: block, lengthSize: Int(lengthSize), to: &out) else { return nil }
+        let lengthSize = format.nalUnitHeaderLength ?? startCode.count
+        guard appendUnits(lengthPrefixed: [UInt8](payload), lengthSize: lengthSize, to: &out) else { return nil }
         return (out, isKey)
     }
 
-    static func appendParameterSets(of format: CMFormatDescription, to out: inout Data, lengthSize: inout Int32) {
-        var count = 0
-        CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-            format,
-            parameterSetIndex: 0,
-            parameterSetPointerOut: nil,
-            parameterSetSizeOut: nil,
-            parameterSetCountOut: &count,
-            nalUnitHeaderLengthOut: &lengthSize
-        )
-        for i in 0..<count {
-            var pointer: UnsafePointer<UInt8>?
-            var size = 0
-            CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
-                format,
-                parameterSetIndex: i,
-                parameterSetPointerOut: &pointer,
-                parameterSetSizeOut: &size,
-                parameterSetCountOut: nil,
-                nalUnitHeaderLengthOut: nil
-            )
-            if let pointer {
-                out.append(contentsOf: startCode)
-                out.append(pointer, count: size)
-            }
-        }
-    }
-
-    static func appendUnits(of block: CMBlockBuffer, lengthSize: Int, to out: inout Data) -> Bool {
-        var total = 0
-        var base: UnsafeMutablePointer<CChar>?
-        let status = CMBlockBufferGetDataPointer(
-            block,
-            atOffset: 0,
-            lengthAtOffsetOut: nil,
-            totalLengthOut: &total,
-            dataPointerOut: &base
-        )
-        guard status == noErr, let base else { return false }
-        let bytes = UnsafeRawPointer(base).assumingMemoryBound(to: UInt8.self)
-        return appendUnits(
-            lengthPrefixed: UnsafeBufferPointer(start: bytes, count: total), lengthSize: lengthSize, to: &out)
-    }
-
-    static func appendUnits(lengthPrefixed bytes: UnsafeBufferPointer<UInt8>, lengthSize: Int, to out: inout Data)
-        -> Bool
-    {
+    static func appendUnits(lengthPrefixed bytes: [UInt8], lengthSize: Int, to out: inout Data) -> Bool {
         var offset = 0
         while offset + lengthSize <= bytes.count {
             let length = bytes[offset..<offset + lengthSize].reduce(0) { $0 << 8 | Int($1) }

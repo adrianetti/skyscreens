@@ -11,11 +11,11 @@ pub(crate) fn use_activity_as_context(app: &AndroidApp) {
 pub(crate) fn wait_for_window(app: &AndroidApp) -> bool {
     loop {
         let (mut window, mut destroyed) = (false, false);
-        app.poll_events(Some(Duration::from_millis(100)), |e| {
-            if let PollEvent::Main(m) = &e {
-                log::info!("android before session: {m:?}");
+        app.poll_events(Some(Duration::from_millis(100)), |event| {
+            if let PollEvent::Main(main_event) = &event {
+                log::info!("android before session: {main_event:?}");
             }
-            match e {
+            match event {
                 PollEvent::Main(MainEvent::InitWindow { .. }) => window = true,
                 PollEvent::Main(MainEvent::Destroy) => destroyed = true,
                 PollEvent::Wake | PollEvent::Timeout | PollEvent::Main(_) | _ => {}
@@ -32,10 +32,10 @@ pub(crate) fn wait_for_window(app: &AndroidApp) -> bool {
 
 pub(crate) fn pump_events(app: &AndroidApp) -> bool {
     let (mut destroyed, mut input) = (false, false);
-    app.poll_events(Some(Duration::ZERO), |e| match e {
+    app.poll_events(Some(Duration::ZERO), |event| match event {
         PollEvent::Main(MainEvent::Destroy) => destroyed = true,
         PollEvent::Main(MainEvent::InputAvailable) => input = true,
-        PollEvent::Main(m) => log::info!("android: {m:?}"),
+        PollEvent::Main(main_event) => log::info!("android: {main_event:?}"),
         PollEvent::Wake | PollEvent::Timeout | _ => {}
     });
     if input {

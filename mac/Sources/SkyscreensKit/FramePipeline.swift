@@ -1,4 +1,3 @@
-import CLink
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -7,7 +6,7 @@ import QuartzCore
 final class FramePipeline: @unchecked Sendable {
     static let microsPerSecond = 1_000_000.0
 
-    private let server: LinkServer
+    private let link: LinkHelper
     private let encoder: VideoEncoder
     private let fps: Double
     private let lock = NSLock()
@@ -17,8 +16,8 @@ final class FramePipeline: @unchecked Sendable {
     private var interval = StreamStats()
     private var total = StreamStats()
 
-    init(server: LinkServer, encoder: VideoEncoder, fps: Double) {
-        self.server = server
+    init(link: LinkHelper, encoder: VideoEncoder, fps: Double) {
+        self.link = link
         self.encoder = encoder
         self.fps = fps
     }
@@ -36,14 +35,14 @@ final class FramePipeline: @unchecked Sendable {
         if let frame { send(frame) }
     }
 
-    func onLinkEvent(kind: UInt8, value: UInt64) {
-        switch Int32(kind) {
-        case SK_EVENT_KEYFRAME_REQUEST:
+    func onLinkEvent(_ event: LinkEvent) {
+        switch event {
+        case .keyframeRequest:
             resendKeyframe()
-        case SK_EVENT_PONG:
-            let ms = (CACurrentMediaTime() * Self.microsPerSecond - Double(value)) / 1000
+        case .pong(let capturedMicros):
+            let ms = (CACurrentMediaTime() * Self.microsPerSecond - Double(capturedMicros)) / 1000
             lock.withLock { interval.roundTripMs.append(ms) }
-        default:
+        case .connected, .disconnected, .listening:
             break
         }
     }
@@ -77,7 +76,7 @@ final class FramePipeline: @unchecked Sendable {
     }
 
     private func deliver(_ frame: VideoEncoder.Frame, capturedMicros: UInt64) {
-        guard server.sendVideo(frame.annexB, isKey: frame.isKey, capturedMicros: capturedMicros) else { return }
+        guard link.sendVideo(frame.annexB, isKey: frame.isKey, capturedMicros: capturedMicros) else { return }
         lock.withLock {
             interval.frames += 1
             interval.keyframes += frame.isKey ? 1 : 0

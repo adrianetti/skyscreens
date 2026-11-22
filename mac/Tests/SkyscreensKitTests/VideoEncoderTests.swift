@@ -7,23 +7,11 @@ import os
 @testable import SkyscreensKit
 
 func makeBGRABuffer(width: Int, height: Int, fill: (Int, Int) -> [UInt8]) -> CVPixelBuffer? {
-    var buffer: CVPixelBuffer?
-    let attrs = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
-    CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, attrs, &buffer)
-    guard let buffer else { return nil }
-    CVPixelBufferLockBaseAddress(buffer, [])
-    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-    guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
-    let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
+    var pixels = Data(capacity: width * height * 4)
     for y in 0..<height {
-        for x in 0..<width {
-            let pixel = fill(x, y)
-            for channel in 0..<4 {
-                base.storeBytes(of: pixel[channel], toByteOffset: y * rowBytes + x * 4 + channel, as: UInt8.self)
-            }
-        }
+        for x in 0..<width { pixels.append(contentsOf: fill(x, y)) }
     }
-    return buffer
+    return PixelMemory.makeBGRA(width: width, height: height, pixels: pixels)
 }
 
 let hardwareEncoderAvailable = (try? VideoEncoder(width: 256, height: 160, fps: 60, bitrate: 2_000_000)) != nil

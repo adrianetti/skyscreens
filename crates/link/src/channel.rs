@@ -24,4 +24,14 @@ mod tests {
             assert_ne!(video(screen), tile(screen));
         }
     }
+
+    #[test]
+    fn every_screen_has_its_own_lanes() {
+        let lanes: Vec<u8> = (0..16).flat_map(|screen| [video(screen), tile(screen)]).collect();
+        let mut unique = lanes.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), lanes.len(), "lanes collide: {lanes:?}");
+        assert_eq!((video(1), tile(1)), (4, 5), "lanes are spaced by LANES_PER_SCREEN");
+    }
 }

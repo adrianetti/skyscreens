@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
-[lib]
-crate-type = ["rlib", "staticlib"]
+[dependencies]
+log = "0.4"
 
 [lints]
 workspace = true

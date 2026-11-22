@@ -23,12 +23,12 @@ impl Platform {
         }
     }
 
-    pub(crate) fn enable(self, e: &mut xr::ExtensionSet) {
-        e.fb_passthrough = self.passthrough;
-        e.khr_composition_layer_cylinder = self.cylinder;
-        e.fb_composition_layer_settings = self.layer_settings;
-        e.meta_automatic_layer_filter = self.auto_layer_filter;
-        e.fb_display_refresh_rate = self.refresh_rate;
-        e.khr_android_surface_swapchain = self.surface_swapchain;
+    pub(crate) fn enable(self, enabled: &mut xr::ExtensionSet) {
+        enabled.fb_passthrough = self.passthrough;
+        enabled.khr_composition_layer_cylinder = self.cylinder;
+        enabled.fb_composition_layer_settings = self.layer_settings;
+        enabled.meta_automatic_layer_filter = self.auto_layer_filter;
+        enabled.fb_display_refresh_rate = self.refresh_rate;
+        enabled.khr_android_surface_swapchain = self.surface_swapchain;
     }
 }

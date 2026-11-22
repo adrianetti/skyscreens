@@ -1,3 +1,5 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+
 pub const START_CODE: [u8; 4] = [0, 0, 0, 1];
 
 pub mod nal {
@@ -10,7 +12,7 @@ pub fn units(access_unit: &[u8]) -> impl Iterator<Item = &[u8]> {
     let starts: Vec<usize> =
         access_unit.windows(START_CODE.len()).enumerate().filter_map(|(i, w)| (w == START_CODE).then_some(i)).collect();
     let ends: Vec<usize> = starts.iter().skip(1).copied().chain([access_unit.len()]).collect();
-    starts.into_iter().zip(ends).map(move |(start, end)| &access_unit[start..end])
+    starts.into_iter().zip(ends).filter_map(move |(start, end)| access_unit.get(start..end))
 }
 
 pub fn unit_type(unit: &[u8]) -> Option<u8> {
@@ -18,12 +20,12 @@ pub fn unit_type(unit: &[u8]) -> Option<u8> {
 }
 
 pub fn parameter_sets(access_unit: &[u8]) -> Option<(&[u8], &[u8])> {
-    let find = |kind| units(access_unit).find(|u| unit_type(u) == Some(kind));
+    let find = |kind| units(access_unit).find(|unit| unit_type(unit) == Some(kind));
     Some((find(nal::SPS)?, find(nal::PPS)?))
 }
 
 pub fn is_decodable_keyframe(access_unit: &[u8]) -> bool {
-    parameter_sets(access_unit).is_some() && units(access_unit).any(|u| unit_type(u) == Some(nal::IDR))
+    parameter_sets(access_unit).is_some() && units(access_unit).any(|unit| unit_type(unit) == Some(nal::IDR))
 }
 
 #[cfg(test)]
@@ -55,7 +57,8 @@ mod tests {
     fn rejects_frames_that_cannot_start_a_decoder() {
         let delta = unit(1, &[7; 10]);
         let idr_without_sps = [unit(nal::PPS, &[1]), unit(nal::IDR, &[2])].concat();
-        for au in [&[][..], &[0, 0, 0][..], &START_CODE[..], &delta[..], &idr_without_sps[..]] {
+        let sets_without_idr = [unit(nal::SPS, &[1]), unit(nal::PPS, &[2]), unit(1, &[3])].concat();
+        for au in [&[][..], &[0, 0, 0][..], &START_CODE[..], &delta[..], &idr_without_sps[..], &sets_without_idr[..]] {
             assert!(!is_decodable_keyframe(au), "{au:?}");
         }
     }

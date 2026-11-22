@@ -267,6 +267,17 @@ dependencies = [
 [[package]]
 name = "link"
 version = "0.1.0"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "link-helper"
+version = "0.1.0"
+dependencies = [
+ "fake-headset",
+ "link",
+]
 
 [[package]]
 name = "log"

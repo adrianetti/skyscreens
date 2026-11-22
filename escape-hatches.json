@@ -1,0 +1,139 @@
+{
+  "policy": "Every way to step around a rule, counted per file. scripts/check.sh fails when the code differs from this file. Only a human updates it, with scripts/escape_hatches.py --update, and a code owner approves the change.",
+  "hatches": {
+    "python Any": {
+      "scripts/eval_judge.py": 6
+    },
+    "rust discarded result": {
+      "crates/fake-headset/src/lib.rs": 2,
+      "crates/fake-headset/tests/loopback.rs": 1,
+      "crates/link-helper/src/lib.rs": 1,
+      "crates/link-helper/tests/bridge.rs": 1,
+      "crates/link/src/sender.rs": 2,
+      "crates/link/tests/properties.rs": 2
+    },
+    "rust expect clippy::needless_pass_by_value": {
+      "xr/src/lib.rs": 1
+    },
+    "rust expect clippy::no_mangle_with_rust_abi": {
+      "xr/src/lib.rs": 1
+    },
+    "rust expect clippy::print_stderr": {
+      "crates/fake-headset/src/main.rs": 1,
+      "crates/link-helper/src/main.rs": 1
+    },
+    "rust expect clippy::print_stdout": {
+      "crates/fake-headset/src/main.rs": 1
+    },
+    "rust expect clippy::struct_excessive_bools": {
+      "xr/src/platform.rs": 1
+    },
+    "rust expect clippy::unwrap_used": {
+      "crates/fake-headset/tests/loopback.rs": 1,
+      "crates/link-helper/tests/binary.rs": 1,
+      "crates/link-helper/tests/bridge.rs": 1
+    },
+    "rust expect clippy::wildcard_enum_match_arm": {
+      "xr/src/app.rs": 1
+    },
+    "rust expect unsafe_code": {
+      "xr/src/android.rs": 1,
+      "xr/src/app.rs": 1,
+      "xr/src/decoder.rs": 1,
+      "xr/src/gpu.rs": 1,
+      "xr/src/lib.rs": 1,
+      "xr/src/runtime.rs": 1
+    },
+    "rust transmute": {
+      "xr/src/runtime.rs": 1
+    },
+    "rust unsafe": {
+      "xr/src/android.rs": 2,
+      "xr/src/app.rs": 6,
+      "xr/src/decoder.rs": 2,
+      "xr/src/gpu.rs": 25,
+      "xr/src/lib.rs": 1,
+      "xr/src/runtime.rs": 9
+    },
+    "shell ignored failure": {
+      "mac/scripts/bundle.sh": 1,
+      "mac/scripts/run.sh": 3,
+      "scripts/eval.sh": 8
+    },
+    "shell silenced stderr": {
+      "mac/scripts/bundle.sh": 1,
+      "mac/scripts/run.sh": 5,
+      "scripts/eval.sh": 2
+    },
+    "swift @unchecked Sendable": {
+      "mac/Sources/SkyscreensKit/FramePipeline.swift": 1,
+      "mac/Sources/SkyscreensKit/ProbeRecorder.swift": 1,
+      "mac/Sources/SkyscreensKit/ScreenCapture.swift": 1,
+      "mac/Sources/SkyscreensKit/VideoEncoder.swift": 1
+    },
+    "swift MainActor.assumeIsolated": {
+      "mac/Sources/SkyscreensKit/MovingBar.swift": 1,
+      "mac/Sources/SkyscreensKit/Probe.swift": 1,
+      "mac/Sources/SkyscreensKit/Streamer.swift": 2
+    },
+    "swift discarded result": {
+      "bench/encode_codecs.swift": 2,
+      "bench/encode_latency.swift": 3,
+      "mac/Sources/SkyscreensKit/FramePipeline.swift": 1,
+      "mac/Sources/SkyscreensKit/Streamer.swift": 2,
+      "mac/Tests/SkyscreensKitTests/ConnectionTrackerTests.swift": 2
+    },
+    "swift try?": {
+      "mac/Sources/SkyscreensKit/MovingBar.swift": 1,
+      "mac/Sources/SkyscreensKit/Probe.swift": 2,
+      "mac/Sources/SkyscreensKit/ScreenCapture.swift": 1,
+      "mac/Sources/SkyscreensKit/Session.swift": 8,
+      "mac/Sources/SkyscreensKit/Streamer.swift": 1,
+      "mac/Tests/SkyscreensKitTests/VideoEncoderTests.swift": 1
+    },
+    "swift unsafe": {
+      "mac/Sources/SkyscreensKit/PixelMemory.swift": 14,
+      "mac/Sources/SkyscreensKit/ScreenCapture.swift": 1,
+      "mac/Sources/SkyscreensKit/VideoEncoder.swift": 1,
+      "mac/Sources/SkyscreensKit/VirtualDisplaySet.swift": 5
+    }
+  },
+  "fingerprints": {
+    "Cargo.toml": "sha256:6df565f9e29d7125591e9ceeee86ea0cf9cd19e2de0d9b38bfc441c9aedeb891",
+    "crates/link/Cargo.toml": "sha256:991a3932b27206de8a582511b2a04ff5e3e4ce2642eae92c5d246b1e97769f6e",
+    "crates/link-helper/Cargo.toml": "sha256:8b7ba23d1e2425ce232944137565f24a4e4a1388904bfb99a2616850139f6166",
+    "crates/fake-headset/Cargo.toml": "sha256:744d80fa69f6c44ef13487381c49493f2ec03dbbf3f81d0028a2bb2e9d465522",
+    "xr/Cargo.toml": "sha256:feca2e2df8662a7e962126dd92978b3d4854f38aedd5838c43eebaa57c615aa7",
+    "clippy.toml": "sha256:58af97c795c33377bcb218797f374573d580b17e51c109340daa74760001820e",
+    "rustfmt.toml": "sha256:76240b97ee8cf9b70cf08a38cacab4c96c8df4a0374557396b59c3e7dc40aa8c",
+    "rust-toolchain.toml": "sha256:d24a986cf3d0573ca35fb49f9616cbed180a27dcb227a9cbe6ba718eaa63fa1e",
+    "deny.toml": "sha256:a295ff664c4feb524950596c260d448d3ba04ea67e5f62ccc826fdc3ca09c980",
+    "ruff.toml": "sha256:fa259ee6dd32149001870144b14905015d4700c8fd75dc77c4cd3ed966dea6d6",
+    "mypy.ini": "sha256:e2ffa920d7e1e18de56af4d7f1d938df777edf18fcd7008456b7676b4d94887b",
+    ".swiftlint.yml": "sha256:3a4a8f9b4199a4686e28f7345c2cbe5420b42703b88dacf93db4f89ddb5d11f9",
+    ".swift-format": "sha256:3051192729b66131080fe7940182bc013a560d9c0537350423e213621fffd01c",
+    "bench/.swift-format": "sha256:f36a94e5010519bc2de166928153981e110506aee6bcb85bdcb0a624854c8d53",
+    ".shellcheckrc": "sha256:b32f3192f9e029f021e68a6125289d401d38ceb1723461ab2bb21068da238727",
+    ".editorconfig": "sha256:e4a2ca1fd13cdffe4197e7d3fdd3782042819441ba227d009684e0d491712e62",
+    "_typos.toml": "sha256:b079286fe9bbde9f0c9ea77944c2db21f4aa59025954612ba9c170805c3a2034",
+    "mac/Package.swift": "sha256:758d84388bcb55838bb6e66c391092c07178b71f4b50b85b509ba25794076fd9",
+    ".github/CODEOWNERS": "sha256:c870c84859ffbd646e9f4fba6a67f33de8e796e74b632a87417679531c2002a5",
+    ".github/zizmor.yml": "sha256:151fc41a4a9aee860cfa9c07c8324150c1f7a5e9ad8b360d6fa82a459c03a78d",
+    ".github/actionlint.yaml": "sha256:8ec581edbb9c124e0fd0d5b6c90cdc90ffd88606b3a3780165a7acc1de7359fe",
+    ".github/dependabot.yml": "sha256:7a33c5cd8b02c1c9c9cfb2f38d46f80651cbc4bf6955fdfe08152c3895298dea",
+    ".github/workflows/ci.yml": "sha256:bb19e64fbbba33e95af5a3acd220323f9390f80e33090c71958776ca2569660b",
+    ".github/workflows/claude.yml": "sha256:f9074cde3c0d8bced92dbd31da4f4db5e5d9aa36fe768f9c00ce628d56d9f369",
+    ".github/workflows/claude-review.yml": "sha256:25b6bf286e54529fd140e8cd34dc87b7799c3fd3d9fa3c315eafd54f7bf8e7b3",
+    ".claude/settings.json": "sha256:4037cc6c70a9b991cbb551dba7dcd26a9e424a606c9b3490aff9f4ca602ae4ab",
+    "scripts/check.sh": "sha256:4c1d6f7e727f4a1ab5a8e7f055119ad413407a1a767b8b0cf753d0bc49e14de9",
+    "scripts/eval.sh": "sha256:9e483be72ea0343771784d944ac19666e793fa21f506a7d88b67c1330210e47d",
+    "scripts/eval_judge.py": "sha256:47e0e21c36ae06b13d4055609ef788c98302fec28d4093c30fa96387c76baff6",
+    "scripts/limits.py": "sha256:c3627ef746e7e8914d0d5e0be6f42a8ba1e7b3af0b2c7568c49feea53c296d33",
+    "scripts/comments.py": "sha256:73aa4c30a5c9c22bf4da9a2e4eeac5b186015c8f7e6725fed885c1d56a8cbccd",
+    "scripts/commit_msg.py": "sha256:fac221294f8f56b43f0ba7b02e56aebdde1ebd5201f3266d924c9cd976cb69bf",
+    "scripts/escape_hatches.py": "sha256:af0f9d8515cbae6d58c162ca25bfdf62c6d6c50da5b31db5cddf0457e2f37d53",
+    "scripts/agent_guard.py": "sha256:18bcde6d754363ab37965a8dc37aae76bcd5f5a42b3e24aef629f5b218c3cfb9",
+    "scripts/hooks/pre-commit": "sha256:3230019f39ff813c17dd1ee4d6eb9cfc3a062f16ee927962633bd8880632fff3",
+    "scripts/hooks/commit-msg": "sha256:4844f83af8b30a602331e7c44cf50bad0b0b6976fc04bc47660561f872198aa8"
+  }
+}

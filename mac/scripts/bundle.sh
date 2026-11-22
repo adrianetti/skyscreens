@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-(cd .. && PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH" cargo build --release -p link)
+(cd .. && PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH" cargo build --release --locked -p link-helper)
 swift build -c release
 APP=.build/Skyscreens.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp .build/release/skyscreens .build/release/skyscreens-displays "$APP/Contents/MacOS/"
+cp .build/release/skyscreens .build/release/skyscreens-displays ../target/release/skyscreens-link "$APP/Contents/MacOS/"
 cat > "$APP/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -30,6 +30,8 @@ if [[ -z "$SIGN" ]]; then
   echo "warning: ad-hoc signature, so macOS will ask for Screen Recording again after every rebuild." >&2
   echo "         Create a signing identity once: docs/development.md#code-signing" >&2
 fi
-codesign --force --sign "$SIGN" "$APP/Contents/MacOS/skyscreens-displays"
+for helper in skyscreens-displays skyscreens-link; do
+  codesign --force --sign "$SIGN" "$APP/Contents/MacOS/$helper"
+done
 codesign --force --sign "$SIGN" "$APP"
 echo "$PWD/$APP"

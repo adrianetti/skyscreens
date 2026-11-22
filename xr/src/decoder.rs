@@ -64,15 +64,15 @@ impl Decoder {
 
     pub(crate) fn feed(&self, data: &[u8], pts_us: u64) -> Result<bool> {
         match self.codec.0.dequeue_input_buffer(INPUT_WAIT)? {
-            DequeuedInputBufferResult::Buffer(mut b) => {
-                let dst = b.buffer_mut();
+            DequeuedInputBufferResult::Buffer(mut input) => {
+                let dst = input.buffer_mut();
                 if data.len() > dst.len() {
                     return Err("frame larger than decoder input buffer".into());
                 }
-                for (d, s) in dst.iter_mut().zip(data) {
-                    d.write(*s);
+                for (slot, byte) in dst.iter_mut().zip(data) {
+                    slot.write(*byte);
                 }
-                self.codec.0.queue_input_buffer(b, 0, data.len(), pts_us, 0)?;
+                self.codec.0.queue_input_buffer(input, 0, data.len(), pts_us, 0)?;
                 Ok(true)
             }
             DequeuedInputBufferResult::TryAgainLater => Ok(false),
@@ -83,15 +83,15 @@ impl Decoder {
 fn release_frames_until_stopped(codec: &ThreadSafeCodec, stop: &AtomicBool, on_frame: impl Fn(u64)) {
     while !stop.load(Ordering::Relaxed) {
         match codec.0.dequeue_output_buffer(OUTPUT_POLL) {
-            Ok(DequeuedOutputBufferInfoResult::Buffer(b)) => {
-                let pts = u64::try_from(b.info().presentation_time_us()).unwrap_or_default();
-                if codec.0.release_output_buffer(b, true).is_ok() {
+            Ok(DequeuedOutputBufferInfoResult::Buffer(output)) => {
+                let pts = u64::try_from(output.info().presentation_time_us()).unwrap_or_default();
+                if codec.0.release_output_buffer(output, true).is_ok() {
                     on_frame(pts);
                 }
             }
             Ok(_) => {}
-            Err(e) => {
-                log::warn!("decoder output: {e}");
+            Err(error) => {
+                log::warn!("decoder output: {error}");
                 break;
             }
         }
@@ -101,9 +101,13 @@ fn release_frames_until_stopped(codec: &ThreadSafeCodec, stop: &AtomicBool, on_f
 impl Drop for Decoder {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(t) = self.output.take() {
-            let _ = t.join();
+        if let Some(thread) = self.output.take()
+            && thread.join().is_err()
+        {
+            log::error!("decoder output thread panicked");
         }
-        let _ = self.codec.0.stop();
+        if let Err(error) = self.codec.0.stop() {
+            log::warn!("decoder stop: {error}");
+        }
     }
 }

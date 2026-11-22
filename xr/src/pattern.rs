@@ -45,7 +45,7 @@ mod tests {
         let (w, h) = (640, 400);
         let px = test_pattern(w, h);
         assert_eq!(px.len(), w * h * 4);
-        assert!(px.chunks_exact(4).all(|p| p[3] == 255));
+        assert!(px.chunks_exact(4).all(|pixel| pixel[3] == 255), "every pixel is opaque");
     }
 
     #[test]

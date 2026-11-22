@@ -81,27 +81,21 @@ public enum Session {
     }
 
     static func spawnDetached(_ argv: [String]) throws -> pid_t {
-        var actions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&actions)
-        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_addopen(&actions, 1, stateFile.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-        posix_spawn_file_actions_addopen(&actions, 2, logFile.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-        var attr: posix_spawnattr_t?
-        posix_spawnattr_init(&attr)
-        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_SETSID))
-        defer {
-            posix_spawn_file_actions_destroy(&actions)
-            posix_spawnattr_destroy(&attr)
+        let manager = FileManager.default
+        manager.createFile(atPath: stateFile.path, contents: nil)
+        manager.createFile(atPath: logFile.path, contents: nil)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: argv[0])
+        process.arguments = Array(argv.dropFirst())
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = try FileHandle(forWritingTo: stateFile)
+        process.standardError = try FileHandle(forWritingTo: logFile)
+        do {
+            try process.run()
+        } catch {
+            throw SessionError.helperFailed("spawn failed: \(error)")
         }
-        var cargs = argv.map { strdup($0) } + [nil]
-        defer {
-            for arg in cargs { free(arg) }
-        }
-        var pid: pid_t = 0
-        guard posix_spawn(&pid, argv[0], &actions, &attr, &cargs, environ) == 0 else {
-            throw SessionError.helperFailed("spawn failed")
-        }
-        return pid
+        return process.processIdentifier
     }
 
     @discardableResult

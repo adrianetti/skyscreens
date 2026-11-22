@@ -5,7 +5,7 @@
 Key facts:
 
 - Platforms: Apple Silicon Mac with macOS 14 or later, and Meta Quest 3. Quest 3S, Android XR and Steam Frame are planned.
-- Mac side: Swift, using `CGVirtualDisplay` (a private API, so no Mac App Store), ScreenCaptureKit and VideoToolbox H.264 in low-latency mode.
+- Mac side: Swift, using `CGVirtualDisplay` (a private API, so no Mac App Store), ScreenCaptureKit and VideoToolbox H.264 in low-latency mode. Frames go over a pipe to `skyscreens-link`, a Rust helper process, so the Mac side has no unsafe C bridge.
 - Headset side: native Rust with OpenXR, Vulkan and MediaCodec. No game engine and no Java.
 - Protocol: the Rust `link` crate, shared by both sides. Today it runs TCP over `adb reverse` on port 7243. UDP with FEC, resend and LTR recovery is planned for Wi-Fi.
 - Targets: 25 ms or less from key press to visible text over USB, and 12 ms or less for the cursor.

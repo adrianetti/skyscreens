@@ -1,0 +1,22 @@
+[package]
+name = "link-helper"
+version = "0.1.0"
+description = "skyscreens-link: the Mac's helper process that owns the headset connection"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "skyscreens-link"
+path = "src/main.rs"
+
+[dependencies]
+link = { path = "../link" }
+
+[dev-dependencies]
+fake-headset = { path = "../fake-headset" }
+
+[lints]
+workspace = true
