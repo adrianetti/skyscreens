@@ -38,36 +38,37 @@ TOKEN = re.compile(r"[\w./-]+")
 
 def protected(path: str) -> bool:
     path = path.removeprefix("./")
-    return (
-        path in PROTECTED_FILES
-        or path.startswith(PROTECTED_DIRS)
-        or Path(path).name in PROTECTED_NAMES
-        or any(f"/{d}" in f"/{path}" for d in PROTECTED_DIRS)
-    )
+    return path in PROTECTED_FILES or path.startswith(PROTECTED_DIRS) or Path(path).name in PROTECTED_NAMES
 
 
-def relative(path: str, root: Path) -> str:
+def repo_path(path: str, root: Path) -> str | None:
     candidate = Path(path)
-    if candidate.is_absolute():
-        try:
-            return str(candidate.resolve().relative_to(root.resolve()))
-        except ValueError:
-            return path
-    return path
+    if not candidate.is_absolute():
+        return path
+    try:
+        return str(candidate.resolve().relative_to(root.resolve()))
+    except ValueError:
+        return None
 
 
-def mentions_protected(command: str) -> bool:
-    return any(protected(token) for token in TOKEN.findall(command) if "/" in token or "." in token)
+def protected_in_repo(path: str, root: Path) -> bool:
+    inside = repo_path(path, root)
+    return inside is not None and protected(inside)
 
 
-def bash_verdict(command: str) -> str | None:
+def mentions_protected(command: str, root: Path) -> bool:
+    tokens = [token for token in TOKEN.findall(command) if "/" in token or "." in token]
+    return any(protected_in_repo(token, root) for token in tokens)
+
+
+def bash_verdict(command: str, root: Path) -> str | None:
     if LEDGER_UPDATE.search(command):
         return "Only a human updates escape-hatches.json. Fix the code instead, or ask the maintainer."
-    if any(protected(target) for target in REDIRECT.findall(command)):
+    if any(protected_in_repo(target, root) for target in REDIRECT.findall(command)):
         return "This command writes a protected rule file. Use the Edit tool so the maintainer can approve it."
-    if WRITING_COMMAND.search(command) and mentions_protected(command):
+    if WRITING_COMMAND.search(command) and mentions_protected(command, root):
         return "This command changes a protected rule file. Use the Edit tool so the maintainer can approve it."
-    if INLINE_PROGRAM.search(command) and WRITE_CALL.search(command) and mentions_protected(command):
+    if INLINE_PROGRAM.search(command) and WRITE_CALL.search(command) and mentions_protected(command, root):
         return "This inline program writes a protected rule file. Use the Edit tool so the maintainer can approve it."
     return None
 
@@ -79,11 +80,11 @@ def decision(event: Mapping[str, object], root: Path) -> dict[str, object] | Non
         return None
     if tool in EDIT_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path")
-        if isinstance(path, str) and protected(relative(path, root)):
-            return verdict("ask", f"{relative(path, root)} is a protected rule file; the maintainer approves changes.")
+        if isinstance(path, str) and protected_in_repo(path, root):
+            return verdict("ask", f"{repo_path(path, root)} is a protected rule file; the maintainer approves changes.")
     if tool == "Bash":
         command = tool_input.get("command")
-        reason = bash_verdict(command) if isinstance(command, str) else None
+        reason = bash_verdict(command, root) if isinstance(command, str) else None
         if reason:
             return verdict("deny", reason)
     return None

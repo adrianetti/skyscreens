@@ -125,14 +125,14 @@
     ".github/workflows/claude.yml": "sha256:f9074cde3c0d8bced92dbd31da4f4db5e5d9aa36fe768f9c00ce628d56d9f369",
     ".github/workflows/claude-review.yml": "sha256:25b6bf286e54529fd140e8cd34dc87b7799c3fd3d9fa3c315eafd54f7bf8e7b3",
     ".claude/settings.json": "sha256:4037cc6c70a9b991cbb551dba7dcd26a9e424a606c9b3490aff9f4ca602ae4ab",
-    "scripts/check.sh": "sha256:4c1d6f7e727f4a1ab5a8e7f055119ad413407a1a767b8b0cf753d0bc49e14de9",
+    "scripts/check.sh": "sha256:455b7f4aeefb6f65d0dd6f5cf42383ca8d20588c6c77e85fc69c0cbbbdec3257",
     "scripts/eval.sh": "sha256:9e483be72ea0343771784d944ac19666e793fa21f506a7d88b67c1330210e47d",
     "scripts/eval_judge.py": "sha256:47e0e21c36ae06b13d4055609ef788c98302fec28d4093c30fa96387c76baff6",
     "scripts/limits.py": "sha256:c3627ef746e7e8914d0d5e0be6f42a8ba1e7b3af0b2c7568c49feea53c296d33",
     "scripts/comments.py": "sha256:73aa4c30a5c9c22bf4da9a2e4eeac5b186015c8f7e6725fed885c1d56a8cbccd",
     "scripts/commit_msg.py": "sha256:fac221294f8f56b43f0ba7b02e56aebdde1ebd5201f3266d924c9cd976cb69bf",
     "scripts/escape_hatches.py": "sha256:af0f9d8515cbae6d58c162ca25bfdf62c6d6c50da5b31db5cddf0457e2f37d53",
-    "scripts/agent_guard.py": "sha256:18bcde6d754363ab37965a8dc37aae76bcd5f5a42b3e24aef629f5b218c3cfb9",
+    "scripts/agent_guard.py": "sha256:cc76e3cf33c4cca077c20639483504abc75767ec8e6661c789d86dab49d95aec",
     "scripts/hooks/pre-commit": "sha256:3230019f39ff813c17dd1ee4d6eb9cfc3a062f16ee927962633bd8880632fff3",
     "scripts/hooks/commit-msg": "sha256:4844f83af8b30a602331e7c44cf50bad0b0b6976fc04bc47660561f872198aa8"
   }

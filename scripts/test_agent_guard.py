@@ -54,7 +54,7 @@ class BashTests(unittest.TestCase):
             "python3 - <<'EOF'\nopen('clippy.toml', 'w').write('')\nEOF",
             "python3 scripts/escape_hatches.py --update",
         ]:
-            self.assertIsNotNone(bash_verdict(command), command)
+            self.assertIsNotNone(bash_verdict(command, ROOT), command)
 
     def test_reading_and_running_checks_pass(self) -> None:
         for command in [
@@ -65,7 +65,17 @@ class BashTests(unittest.TestCase):
             "cargo test --workspace",
             "sed -i '' 's/a/b/' crates/link/src/sender.rs",
         ]:
-            self.assertIsNone(bash_verdict(command), command)
+            self.assertIsNone(bash_verdict(command, ROOT), command)
+
+    def test_absolute_paths_are_judged_relative_to_the_repo(self) -> None:
+        root = Path("/home/dev/repo/.claude/worktrees/feature")
+        self.assertIsNone(bash_verdict(f"cd {root} && rm -rf /tmp/scratch/fresh", root))
+        self.assertIsNone(bash_verdict(f"cp {root}/crates/link/src/sender.rs /tmp/copy.rs", root))
+        self.assertIsNotNone(bash_verdict(f"rm {root}/ruff.toml", root))
+        self.assertIsNotNone(bash_verdict(f"echo x > {root}/scripts/check.sh", root))
+
+    def test_files_outside_the_repo_are_not_protected(self) -> None:
+        self.assertIsNone(bash_verdict("rm /tmp/other/Cargo.toml", ROOT))
 
     def test_bash_blocks_are_denials(self) -> None:
         event = {"tool_name": "Bash", "tool_input": {"command": "rm deny.toml"}}

@@ -77,10 +77,10 @@ check_rust() {
 
 mutants_all_caught() {
   local code=0
+  mkdir -p target
   cargo mutants -p link -p link-helper --test-workspace=true --jobs 4 --timeout 30 --output target/mutants || code=$?
-  [[ $code -eq 0 || $code -eq "$MUTANTS_ONLY_TIMEOUTS" ]] || fail "a mutant survived; see target/mutants/mutants.out/missed.txt"
+  [[ $code -eq 0 || $code -eq "$MUTANTS_ONLY_TIMEOUTS" ]] || fail "cargo mutants exited $code; 2 means a mutant survived"
 }
-
 check_mutants() {
   need cargo-mutants
   run "mutation testing: every mutant of the protocol crates is caught (a hang counts as caught)" mutants_all_caught
