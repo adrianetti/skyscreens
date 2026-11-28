@@ -18,12 +18,12 @@ log = "0.4"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6", features = ["native-activity"] }
-android_logger = "0.14"
+android_logger = "0.15"
 ash = "0.38"
 ndk-context = "0.1"
 ndk = { version = "0.9", features = ["media", "api-level-29"] }
-jni = "0.21"
-openxr = { version = "0.19", features = ["loaded"] }
+jni = "0.22"
+openxr = { version = "0.22", features = ["loaded"] }
 
 [lints]
 workspace = true
